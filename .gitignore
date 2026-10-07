@@ -1,0 +1,22 @@
+.env
+.env.*
+!.env.example
+
+# BE
+backend/bin/
+*.test
+coverage.out
+
+# FE
+node_modules/
+dist/
+
+# Claude Code 個人設定
+.claude/settings.local.json
+CLAUDE.local.md
+
+.DS_Store
+
+.claude
+.codex
+openspec/
