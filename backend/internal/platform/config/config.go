@@ -15,7 +15,7 @@ type Config struct {
 
 func Load() (Config, error) {
 	cfg := Config{
-		HTTPAddr:    getenv("HTTP_ADDR", ":8080"),
+		HTTPAddr:    getenv("HTTP_ADDR", "127.0.0.1:8080"),
 		DatabaseURL: os.Getenv("DATABASE_URL"),
 	}
 	if cfg.DatabaseURL == "" {
