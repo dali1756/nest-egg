@@ -1,42 +1,252 @@
+/* 配色：白底＋橘色強調，只用亮色模式。名稱沿用 shadcn/ui 慣例，之後導入時可直接沿用 */
 :root {
+  color-scheme: light;
+
+  --background: #fffaf5; /* 頁面底色：帶一點暖色的米白 */
+  --foreground: #292524;
+  --heading: #1c1917;
+  --muted-foreground: #78716c;
+  --card: #ffffff;
+  --border: #f0e4d7;
+
+  --brand: #f97316; /* 標誌與裝飾用的亮橘 */
+  --brand-soft: #fff1e6;
+  --primary: #d4450d; /* 按鈕底色：白字對比 4.51:1，符合 WCAG AA */
+  --primary-hover: #c2410c;
+  --primary-foreground: #ffffff;
+  --ring: #fdba74;
+
+  /* 燈號：綠＝正常、紅＝異常、灰＝未知或檢查中 */
+  --success: #16a34a;
+  --success-soft: #dcfce7;
+  --success-text: #15803d;
+  --destructive: #dc2626;
+  --destructive-soft: #fee2e2;
+  --destructive-text: #b91c1c;
+  --neutral: #a8a29e;
+  --neutral-soft: #f5f5f4;
+  --neutral-text: #57534e;
+
+  --radius: 16px;
+
   font-family: system-ui, -apple-system, 'PingFang TC', 'Noto Sans TC', sans-serif;
-  line-height: 1.5;
-  color-scheme: light dark;
+  line-height: 1.6;
+  color: var(--foreground);
+  background: var(--background);
+  -webkit-font-smoothing: antialiased;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
-  display: grid;
-  place-items: center;
+  /* 頂端一層淡橘，往下漸漸變回米白 */
+  background: linear-gradient(180deg, var(--brand-soft) 0, var(--background) 360px);
 }
 
-main {
-  text-align: center;
+h1,
+h2 {
+  margin: 0;
+  color: var(--heading);
 }
 
-.status {
-  list-style: none;
-  padding: 0;
-  margin: 0 0 1.5rem;
-  font-size: 1.125rem;
+.container {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 0 20px;
 }
 
-.status li::before {
-  content: '●';
-  margin-right: 0.5rem;
+/* 頁首 */
+.site-header {
+  background: rgb(255 255 255 / 0.85);
+  border-bottom: 1px solid var(--border);
 }
 
-.status .up::before {
-  color: #16a34a;
+.site-header .container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 64px;
 }
 
-.status .down::before {
-  color: #dc2626;
+.brand-mark {
+  display: block;
+  flex: none;
 }
 
-button {
+.brand-name {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--heading);
+}
+
+.brand-tagline {
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+
+/* 標題 */
+.page-title {
+  margin-top: 48px;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.page-lead {
+  margin: 8px 0 28px;
+  color: var(--muted-foreground);
+}
+
+/* 卡片 */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow:
+    0 1px 2px rgb(124 45 18 / 0.04),
+    0 12px 32px -16px rgb(124 45 18 / 0.18);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.card-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* 按鈕 */
+.button {
+  padding: 8px 16px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--primary);
+  color: var(--primary-foreground);
   font: inherit;
-  padding: 0.4rem 1rem;
+  font-size: 14px;
+  font-weight: 600;
   cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+.button:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* 狀態列表 */
+.status-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
+}
+
+.status-row + .status-row {
+  border-top: 1px solid var(--border);
+}
+
+.status-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.status-name {
+  font-weight: 600;
+  color: var(--heading);
+}
+
+.status-detail {
+  color: var(--muted-foreground);
+  font-size: 14px;
+}
+
+/* 燈號：實心圓點加一圈淡色光暈；文字徽章讓色盲使用者也看得懂 */
+.status-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.badge {
+  flex: none;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.status-dot.ok {
+  background: var(--success);
+  box-shadow: 0 0 0 4px var(--success-soft);
+}
+
+.badge.ok {
+  background: var(--success-soft);
+  color: var(--success-text);
+}
+
+.status-dot.error {
+  background: var(--destructive);
+  box-shadow: 0 0 0 4px var(--destructive-soft);
+}
+
+.badge.error {
+  background: var(--destructive-soft);
+  color: var(--destructive-text);
+}
+
+.status-dot.unknown,
+.status-dot.checking {
+  background: var(--neutral);
+  box-shadow: 0 0 0 4px var(--neutral-soft);
+}
+
+.badge.unknown,
+.badge.checking {
+  background: var(--neutral-soft);
+  color: var(--neutral-text);
+}
+
+.status-dot.checking {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-dot.checking {
+    animation: none;
+  }
 }
