@@ -1,0 +1,16 @@
+# air：監看 Go 原始碼，存檔後自動重新編譯並重啟。
+# docker compose 的 backend 服務使用；本機也能跑：go run github.com/air-verse/air@v1.67.4
+root = "."
+tmp_dir = "tmp"
+# 讀取 .env，但不會覆蓋已經存在的環境變數（例如 docker compose 設定的 DATABASE_URL）
+env_files = [".env"]
+
+[build]
+  cmd = "go build -o ./tmp/server ./cmd/server"
+  entrypoint = ["./tmp/server"]
+  # 先送 SIGINT 讓 server 正常關閉、釋放資料庫連線，超過 kill_delay 才強制結束
+  send_interrupt = true
+  kill_delay = "5s"
+
+[misc]
+  clean_on_exit = true

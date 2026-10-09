@@ -60,17 +60,20 @@ nest-egg/
 │   │   ├── fx/                # 換匯交易：handler.go / service.go / repository.go
 │   │   ├── rate/              # 匯率：RateProvider interface、排程、rate_snapshots
 │   │   ├── stock/             # 第 4 階段
-│   │   └── platform/          # config、db、middleware、httpserver
+│   │   └── platform/          # config、db、health（健康檢查）；之後加 middleware
 │   ├── db/
 │   │   ├── migrations/        # goose
 │   │   └── queries/           # sqlc 的 .sql
 │   ├── sqlc.yaml
-│   └── go.mod                 # module github.com/dali1756/nest-egg/backend（依 GitHub repo 名稱調整）
+│   ├── .air.toml              # air 熱重載設定
+│   ├── Dockerfile             # 開發用映像（air）
+│   └── go.mod                 # module github.com/dali1756/nest-egg/backend
 ├── frontend/
+│   ├── Dockerfile             # 開發用映像（Vite）
 │   └── src/{api,pages,components,hooks,lib}
 ├── docs/
 │   └── architecture.md
-├── docker-compose.yml         # PostgreSQL，TZ=Asia/Taipei
+├── docker-compose.yml         # 開發環境：db、backend、frontend 一起啟動
 ├── Makefile
 ├── CLAUDE.md
 └── README.md
@@ -146,6 +149,7 @@ JSON 中的金額與匯率一律用字串。
 
 | 方法與路徑 | 用途 | 階段 |
 |---|---|---|
+| `GET /api/health` | 健康檢查：每次實際 ping 資料庫，連不到回 503 | 0 |
 | `GET /api/currencies` | 幣別清單 | 1 |
 | `GET /api/fx-trades` | 換匯交易列表（可用 `from`、`to` 篩選日期） | 1 |
 | `POST /api/fx-trades` | 新增換匯交易 | 1 |
@@ -195,6 +199,6 @@ type RateProvider interface {
 
 ## 8. 開發與部署
 
-- **開發：** `docker-compose up` 啟動 PostgreSQL；Go 後端跑在 `localhost:8080`；Vite 開發伺服器用 proxy 把 `/api` 轉到後端，不用處理 CORS。
+- **開發：** `docker-compose up` 一次啟動 PostgreSQL（本機 `localhost:5433`，TZ=Asia/Taipei）、Go 後端（`localhost:8080`，air 熱重載）與 Vite 開發伺服器（`localhost:5173`）；Vite 用 proxy 把 `/api` 轉到後端，不用處理 CORS。啟動與驗證步驟見 README。
 - **正式環境：** 可用 `embed` 把前端 build 出來的檔案包進 Go 執行檔，只部署一個檔案。
 - **登入：** 第一版只在本機跑，先不做。放上網路前必須加登入與 HTTPS，因為是財務資料。

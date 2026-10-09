@@ -4,6 +4,7 @@
 
 # BE
 backend/bin/
+backend/tmp/
 *.test
 coverage.out
 

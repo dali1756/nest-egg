@@ -28,3 +28,8 @@
 - 錯誤往上傳時用 `fmt.Errorf("...: %w", err)` 包裝。
 - 測試用 `testing` + `net/http/httptest`。
 
+## 打包成 docker 測試資料庫有無連線上
+```bash
+docker-compose up
+```
+輸入網址`http://localhost:5173`預期會看到`後端API`、`資料庫`皆顯示正常。
