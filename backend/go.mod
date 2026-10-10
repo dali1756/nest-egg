@@ -1,4 +1,4 @@
-module github.com/dali1756/nest-egg/backend
+module nest-egg/backend
 
 go 1.27.1
 

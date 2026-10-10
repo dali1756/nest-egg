@@ -11,9 +11,9 @@ import (
 	"time"
 	_ "time/tzdata"
 
-	"github.com/dali1756/nest-egg/backend/internal/platform/config"
-	"github.com/dali1756/nest-egg/backend/internal/platform/db"
-	"github.com/dali1756/nest-egg/backend/internal/platform/health"
+	"nest-egg/backend/internal/platform/config"
+	"nest-egg/backend/internal/platform/db"
+	"nest-egg/backend/internal/platform/health"
 )
 
 func main() {

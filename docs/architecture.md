@@ -67,7 +67,7 @@ nest-egg/
 │   ├── sqlc.yaml
 │   ├── .air.toml              # air 熱重載設定
 │   ├── Dockerfile             # 開發用映像（air）
-│   └── go.mod                 # module github.com/dali1756/nest-egg/backend
+│   └── go.mod                 # module nest-egg/backend
 ├── frontend/
 │   ├── Dockerfile             # 開發用映像（Vite）
 │   └── src/{api,pages,components,hooks,lib}
