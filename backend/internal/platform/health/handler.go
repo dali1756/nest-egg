@@ -31,9 +31,12 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	code, body := http.StatusOK, response{Status: "ok", Database: "up"}
+	start := time.Now()
 	if err := h.db.Ping(ctx); err != nil {
 		slog.ErrorContext(ctx, "database ping failed", "err", err)
 		code, body = http.StatusServiceUnavailable, response{Status: "unavailable", Database: "down"}
+	} else {
+		slog.DebugContext(ctx, "database ping ok", "duration", time.Since(start))
 	}
 
 	w.Header().Set("Content-Type", "application/json")
