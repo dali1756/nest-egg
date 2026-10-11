@@ -197,7 +197,40 @@ type RateProvider interface {
 - 背景 goroutine 用 `time.Ticker` 每天抓一次，寫進 `rate_snapshots`。
 - 新增換匯交易時，從 `rate_snapshots` 查交易日（台北時區）的匯率帶入 `market_rate`；查不到就留 NULL。
 
-## 8. 開發與部署
+## 8. 錯誤處理與 log
+
+只用標準函式庫 `log/slog`，不引入其他 log 套件。目標：出問題時，能用一個 request ID 找到那次請求的完整經過。
+
+### 錯誤往上傳，只在最上層記一次
+
+- 中間層（repository、service、`db.Open` 這類）只用 `fmt.Errorf("說明: %w", err)` 包裝後回傳，不記 log。每層加的前綴會串成完整的錯誤鏈。
+- 只在最上層記錯誤 log：
+  - 啟動流程：`main()`，`run()` 回傳錯誤後記 log 並 `os.Exit(1)`
+  - HTTP 請求：統一的錯誤處理函式（見下表），handler 只回傳 error
+  - 背景工作（例如每天抓匯率）：工作本身的最上層
+- 預期內、能就地處理的情況不算錯誤，不往上丟。例如查不到匯率時 `market_rate` 留 NULL，視需要記一筆 WARN。
+
+### HTTP 層
+
+第 1 階段開始寫 API 時，一起加進 `internal/platform/`：
+
+| 項目 | 做法 |
+|---|---|
+| 統一錯誤處理 | handler 寫成 `func(w http.ResponseWriter, r *http.Request) error`，由一個轉接函式統一記 log、決定狀態碼（用 `errors.Is` 把「找不到」對應成 404 等），並輸出錯誤 JSON |
+| 錯誤回應 | 前端只收到通用訊息和 request ID，例如 `{"error":"internal error","request_id":"..."}`；內部錯誤細節只留在後端 log |
+| request ID | middleware 為每個請求產生 ID（`crypto/rand.Text()`），放進 context 和 `X-Request-ID` 回應標頭；這個請求的每一行 log 都帶上 `request_id` |
+| access log | 每個請求記一行：`method`、`path`、`status`、`duration_ms`、`request_id` |
+| panic | middleware 用 `recover` 接住，記一筆 ERROR（含 stack trace）並回 500 |
+
+### 寫法規則
+
+- 訊息用固定字串，變數放欄位：`slog.ErrorContext(ctx, "fetch rates failed", "provider", name, "err", err)`，不要把變數拼進訊息。
+- 等級：DEBUG 是開發細節、INFO 是重要事件、WARN 是不正常但已處理、ERROR 是操作失敗。用 `LOG_LEVEL` 控制，開發用 `debug`、正式環境用 `info`。
+- 不記密碼、token、API key、完整的 `DATABASE_URL`；財務資料盡量只記 ID，不記金額。
+- 一律輸出到 stdout。開發用 `slog.NewTextHandler`；正式環境改用 `slog.NewJSONHandler`（例如用 `LOG_FORMAT=json` 切換），方便依欄位查詢。
+- 背景工作記開始、結束、耗時與處理筆數；失敗時記一次 ERROR，並帶上工作名稱。
+
+## 9. 開發與部署
 
 - **開發：** `docker-compose up` 一次啟動 PostgreSQL（本機 `localhost:5433`，TZ=Asia/Taipei）、Go 後端（`localhost:8080`，air 熱重載）與 Vite 開發伺服器（`localhost:5173`）；Vite 用 proxy 把 `/api` 轉到後端，不用處理 CORS。啟動與驗證步驟見 README。
 - **正式環境：** 可用 `embed` 把前端 build 出來的檔案包進 Go 執行檔，只部署一個檔案。
