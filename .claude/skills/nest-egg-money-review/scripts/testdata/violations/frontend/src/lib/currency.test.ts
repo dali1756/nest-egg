@@ -1,0 +1,1 @@
+const codes = ['USD', 'JPY']

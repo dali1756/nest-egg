@@ -30,6 +30,12 @@
 - log 用 `log/slog`：訊息用固定字串、變數放欄位；不記密碼、token、完整的 `DATABASE_URL`。request ID、access log、錯誤回應格式見 [docs/architecture.md](docs/architecture.md) 第 8 節。
 - 測試用 `testing` + `net/http/httptest`。
 
+## 開發用 skill
+
+- 改了金額、匯率、日期、幣別或 log 相關的程式碼後，在 commit 或 `/opsx:verify` 之前，用 `nest-egg-money-review` 檢查設計規則。
+- 整個開發環境的端對端檢查由使用者執行 `/nest-egg-verify`；Claude 不自行啟動或停止容器。
+- 自訂 skill 放在 `.claude/skills/nest-egg-*/` 並進版控；`.claude/` 的其他內容不進版控。
+
 ## 打包成 docker 測試資料庫有無連線上
 ```bash
 docker-compose up

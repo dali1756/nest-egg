@@ -41,6 +41,12 @@ docker-compose up
 4. 反向測試：`docker-compose stop db` 後再 curl 一次，應該變成 `503` 與 `{"status":"unavailable","database":"down"}`；`docker compose start db` 後恢復 `200`，後端不用重啟。
 5. 瀏覽器開 http://localhost:5173：畫面顯示後端與資料庫的狀態，走的是「瀏覽器 --> Vite proxy --> Go --> PostgreSQL」整條路徑。
 
+以上步驟可以一次自動跑完（會先 `docker compose up -d`；反向測試會暫停 db 幾秒，結束時自動恢復）：
+
+```bash
+bash .claude/skills/nest-egg-verify/scripts/verify-stack.sh
+```
+
 ## 測試
 
 ```bash

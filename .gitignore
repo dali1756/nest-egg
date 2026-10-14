@@ -12,12 +12,14 @@ coverage.out
 node_modules/
 dist/
 
-# Claude Code 個人設定
 .claude/settings.local.json
 CLAUDE.local.md
 
 .DS_Store
 
-.claude
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/nest-egg-*/
 .codex
 openspec/
