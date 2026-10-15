@@ -30,6 +30,16 @@
 - log 用 `log/slog`：訊息用固定字串、變數放欄位；不記密碼、token、完整的 `DATABASE_URL`。request ID、access log、錯誤回應格式見 [docs/architecture.md](docs/architecture.md) 第 8 節。
 - 測試用 `testing` + `net/http/httptest`。
 
+## 檢查指令
+
+- `go.mod` 在 `backend/`，在專案根目錄執行要加 `-C backend`。單元測試用假物件，不需要開 Docker。
+- 改了後端程式碼，commit 前執行：
+  ```bash
+  go -C backend vet ./...
+  go -C backend test ./...
+  ```
+- 新寫的測試要確認抓得到 bug：暫時改壞被測的那一行，測試應該失敗，確認後改回來。
+
 ## 開發用 skill
 
 - 改了金額、匯率、日期、幣別或 log 相關的程式碼後，在 commit 或 `/opsx:verify` 之前，用 `nest-egg-money-review` 檢查設計規則。

@@ -49,8 +49,18 @@ bash .claude/skills/nest-egg-verify/scripts/verify-stack.sh
 
 ## 測試
 
+在專案根目錄執行。`go.mod` 在 `backend/`，所以要加 `-C backend`；單元測試用假物件，不需要開 Docker：
+
 ```bash
-docker compose exec backend go test ./...
+go -C backend vet ./...
+go -C backend test ./...
+```
+
+本機沒有安裝 Go 的話，改在後端容器裡執行（容器要先啟動）：
+
+```bash
+docker-compose exec backend go vet ./...
+docker-compose exec backend go test ./...
 ```
 
 ## 不透過 Docker 跑後端或前端（看個人選用）

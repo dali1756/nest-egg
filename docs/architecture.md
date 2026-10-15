@@ -60,7 +60,7 @@ nest-egg/
 │   │   ├── fx/                # 換匯交易：handler.go / service.go / repository.go
 │   │   ├── rate/              # 匯率：RateProvider interface、排程、rate_snapshots
 │   │   ├── stock/             # 第 4 階段
-│   │   └── platform/          # config、db、health（健康檢查）；之後加 middleware
+│   │   └── platform/          # config、db、health（健康檢查）、middleware（access log）
 │   ├── db/
 │   │   ├── migrations/        # goose
 │   │   └── queries/           # sqlc 的 .sql
@@ -212,14 +212,14 @@ type RateProvider interface {
 
 ### HTTP 層
 
-第 1 階段開始寫 API 時，一起加進 `internal/platform/`：
+標 ✅ 的已完成，其餘在第 1 階段開始寫 API 時加進 `internal/platform/`：
 
 | 項目 | 做法 |
 |---|---|
 | 統一錯誤處理 | handler 寫成 `func(w http.ResponseWriter, r *http.Request) error`，由一個轉接函式統一記 log、決定狀態碼（用 `errors.Is` 把「找不到」對應成 404 等），並輸出錯誤 JSON |
 | 錯誤回應 | 前端只收到通用訊息和 request ID，例如 `{"error":"internal error","request_id":"..."}`；內部錯誤細節只留在後端 log |
 | request ID | middleware 為每個請求產生 ID（`crypto/rand.Text()`），放進 context 和 `X-Request-ID` 回應標頭；這個請求的每一行 log 都帶上 `request_id` |
-| access log | 每個請求記一行：`method`、`path`、`status`、`duration_ms`、`request_id` |
+| access log ✅ | 每個請求記一行：`method`、`path`、`status`、`duration_ms`（`platform/middleware/accesslog.go`）；做好 request ID 後再加上 `request_id` |
 | panic | middleware 用 `recover` 接住，記一筆 ERROR（含 stack trace）並回 500 |
 
 ### 寫法規則
@@ -227,7 +227,7 @@ type RateProvider interface {
 - 訊息用固定字串，變數放欄位：`slog.ErrorContext(ctx, "fetch rates failed", "provider", name, "err", err)`，不要把變數拼進訊息。
 - 等級：DEBUG 是開發細節、INFO 是重要事件、WARN 是不正常但已處理、ERROR 是操作失敗。用 `LOG_LEVEL` 控制，開發用 `debug`、正式環境用 `info`。
 - 不記密碼、token、API key、完整的 `DATABASE_URL`；財務資料盡量只記 ID，不記金額。
-- 一律輸出到 stdout。開發用 `slog.NewTextHandler`；正式環境改用 `slog.NewJSONHandler`（例如用 `LOG_FORMAT=json` 切換），方便依欄位查詢。
+- 一律輸出到 stdout。開發用 `slog.NewTextHandler`；正式環境設 `LOG_FORMAT=json` 改用 `slog.NewJSONHandler`，方便依欄位查詢。`LOG_FORMAT` 預設 `text`，填其他值時啟動失敗。
 - 背景工作記開始、結束、耗時與處理筆數；失敗時記一次 ERROR，並帶上工作名稱。
 
 ## 9. 開發與部署

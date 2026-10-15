@@ -14,6 +14,7 @@ import (
 	"nest-egg/backend/internal/platform/config"
 	"nest-egg/backend/internal/platform/db"
 	"nest-egg/backend/internal/platform/health"
+	"nest-egg/backend/internal/platform/middleware"
 )
 
 func main() {
@@ -28,7 +29,6 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	// slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel})))
 	opts := &slog.HandlerOptions{Level: cfg.LogLevel}
 	var handler slog.Handler
 	switch cfg.LogFormat {
@@ -56,7 +56,7 @@ func run() error {
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           mux,
+		Handler:           middleware.AccessLog(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
