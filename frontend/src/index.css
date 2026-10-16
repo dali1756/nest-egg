@@ -422,6 +422,22 @@ h2 {
   font-weight: 600;
 }
 
+.form-notice {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--success-soft);
+  color: var(--success-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.auth-forgot {
+  align-self: flex-end;
+  margin-top: -8px;
+  font-size: 14px;
+}
+
 @media (max-width: 480px) {
   .brand-tagline {
     display: none;

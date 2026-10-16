@@ -8,6 +8,8 @@ type Options = {
   loginStatus?: number
   loginPending?: boolean
   registerStatus?: number
+  forgotStatus?: number
+  resetStatus?: number
 }
 
 function json(status: number, body: unknown) {
@@ -15,6 +17,10 @@ function json(status: number, body: unknown) {
     status,
     headers: { 'Content-Type': 'application/json' },
   })
+}
+
+function empty(status: number) {
+  return new Response(null, { status })
 }
 
 export function fakeBackend(opts: Options = {}) {
@@ -36,17 +42,29 @@ export function fakeBackend(opts: Options = {}) {
       case 'POST /api/auth/login': {
         if (opts.loginPending) return new Promise<Response>(() => {})
         const status = opts.loginStatus ?? 200
-        if (status === 200) state.user = body!.email.toLowerCase()
-        return json(status, { status: status === 200 ? 'success' : 'failure' })
+        if (status !== 200) return json(status, { error: 'login failed' })
+        state.user = body!.email.trim().toLowerCase()
+        return json(200, { email: state.user })
       }
       case 'POST /api/auth/register': {
-        const status = opts.registerStatus ?? 200
-        if (status === 200) state.user = body!.email.toLowerCase()
-        return json(status, { status: status === 200 ? 'success' : 'failure' })
+        const status = opts.registerStatus ?? 201
+        if (status !== 201) return json(status, { error: 'register failed' })
+        state.user = body!.email.trim().toLowerCase()
+        return json(201, { email: state.user })
       }
       case 'POST /api/auth/logout':
         state.user = null
-        return json(200, { status: 'success', location: '/login' })
+        return empty(204)
+      case 'POST /api/auth/password/forgot': {
+        const status = opts.forgotStatus ?? 202
+        return status === 202 ? empty(202) : json(status, { error: 'forgot failed' })
+      }
+      case 'POST /api/auth/password/reset': {
+        const status = opts.resetStatus ?? 204
+        if (status !== 204) return json(status, { error: 'reset failed' })
+        state.user = null
+        return empty(204)
+      }
     }
     return json(404, { error: 'not found' })
   })

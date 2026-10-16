@@ -16,7 +16,9 @@ const schema = z.object({
 type LoginValues = z.infer<typeof schema>
 
 function errorMessage(err: Error) {
-  return err instanceof ApiError && err.status === 401 ? 'email 或密碼錯誤' : '登入失敗，請稍後再試'
+  if (err instanceof ApiError && err.status === 401) return 'email 或密碼錯誤'
+  if (err instanceof ApiError && err.status === 423) return '帳號已鎖定，請聯絡管理員'
+  return '登入失敗，請稍後再試'
 }
 
 function LoginPage() {
@@ -60,6 +62,9 @@ function LoginPage() {
           error={errors.password?.message}
           {...register('password')}
         />
+        <Link className="link auth-forgot" to="/forgot-password">
+          忘記密碼？
+        </Link>
         <button type="submit" className="button button-block" disabled={mutation.isPending}>
           {mutation.isPending ? '登入中…' : '登入'}
         </button>

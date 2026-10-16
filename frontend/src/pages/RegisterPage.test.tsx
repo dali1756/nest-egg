@@ -42,6 +42,8 @@ test.each([
   ['PASSW0RD!', '缺少小寫英文字母'],
   ['Password!', '缺少數字'],
   ['Pa0rd!', '至少需要 8 個字元'],
+  ['Pass w0rd!', '不可有空白'],
+  ['Aa1!' + 'a'.repeat(61), '最多 64 個字元'],
 ])('rejects %s (%s)', async (password, missing) => {
   const backend = fakeBackend({ user: null })
   renderApp('/register')

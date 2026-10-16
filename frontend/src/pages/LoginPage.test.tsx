@@ -71,3 +71,19 @@ test('links to the register page', async () => {
 
   expect(await screen.findByRole('link', { name: '註冊新帳號' })).toHaveAttribute('href', '/register')
 })
+
+test('tells the user when the account is locked', async () => {
+  fakeBackend({ user: null, loginStatus: 423 })
+  renderApp('/login')
+
+  await fillLogin('me@example.com', 'Passw0rd!')
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('帳號已鎖定，請聯絡管理員')
+})
+
+test('links to the forgot password page', async () => {
+  fakeBackend({ user: null })
+  renderApp('/login')
+
+  expect(await screen.findByRole('link', { name: '忘記密碼？' })).toHaveAttribute('href', '/forgot-password')
+})

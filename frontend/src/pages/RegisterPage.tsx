@@ -7,19 +7,12 @@ import { ApiError, register as registerUser } from '../api/auth'
 import AuthCard from '../components/AuthCard'
 import Field from '../components/Field'
 import { currentUserKey, useCurrentUser } from '../hooks/useCurrentUser'
-
-const password = z
-  .string()
-  .min(8, '至少需要 8 個字元')
-  .regex(/\p{Lu}/u, '缺少大寫英文字母')
-  .regex(/\p{Ll}/u, '缺少小寫英文字母')
-  .regex(/\p{Nd}/u, '缺少數字')
-  .regex(/[^\p{L}\p{Nd}\s]/u, '缺少符號')
+import { passwordHint, passwordSchema } from '../validation/password'
 
 const schema = z
   .object({
     email: z.email('請輸入有效的 email'),
-    password,
+    password: passwordSchema,
     confirm_password: z.string(),
   })
   .refine((v) => v.password === v.confirm_password, {
@@ -72,7 +65,7 @@ function RegisterPage() {
           label="密碼"
           type="password"
           autoComplete="new-password"
-          hint="至少 8 個字元，並包含大寫、小寫英文字母、數字與符號。"
+          hint={passwordHint}
           error={errors.password?.message}
           {...register('password')}
         />

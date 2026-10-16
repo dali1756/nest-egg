@@ -2,6 +2,7 @@ export type User = { email: string }
 
 export type LoginInput = { email: string; password: string }
 export type RegisterInput = { email: string; password: string; confirm_password: string }
+export type ResetPasswordInput = { token: string; password: string; confirm_password: string }
 
 export class ApiError extends Error {
   status: number
@@ -41,4 +42,12 @@ export function register(input: RegisterInput): Promise<void> {
 
 export function logout(): Promise<void> {
   return post('/api/auth/logout')
+}
+
+export function forgotPassword(email: string): Promise<void> {
+  return post('/api/auth/password/forgot', { email })
+}
+
+export function resetPassword(input: ResetPasswordInput): Promise<void> {
+  return post('/api/auth/password/reset', input)
 }
