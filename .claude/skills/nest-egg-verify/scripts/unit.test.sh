@@ -157,6 +157,35 @@ test_smoke_health() {
   fi
 }
 
+test_smoke_auth_me() {
+  respond "401${TAB}{\"error\":\"unauthorized\"}"
+  BACKEND_URL=http://127.0.0.1:18080 bash "$here/smoke/auth-me.sh" >/dev/null 2>"$tmp/stderr"
+  local code=$?
+  if [ "$code" -eq 0 ] && [ "$(cat "$FAKE_CURL_LOG")" = "GET http://127.0.0.1:18080/api/auth/me " ]; then
+    pass "smoke/auth-me.sh：未帶 cookie 回 401 時回 0，並使用 BACKEND_URL"
+  else
+    fail "smoke/auth-me.sh 正常：code=${code} 呼叫紀錄=$(cat "$FAKE_CURL_LOG") stderr=$(cat "$tmp/stderr")"
+  fi
+
+  respond "200${TAB}{\"email\":\"me@example.com\"}"
+  BACKEND_URL=http://127.0.0.1:18080 bash "$here/smoke/auth-me.sh" >/dev/null 2>"$tmp/stderr"
+  code=$?
+  if [ "$code" -ne 0 ] && grep -q 200 "$tmp/stderr"; then
+    pass "smoke/auth-me.sh：沒登入卻回 200 時回非 0，並印出實際狀態碼"
+  else
+    fail "smoke/auth-me.sh 未保護：code=${code} stderr=$(cat "$tmp/stderr")"
+  fi
+
+  respond "404${TAB}404 page not found"
+  BACKEND_URL=http://127.0.0.1:18080 bash "$here/smoke/auth-me.sh" >/dev/null 2>"$tmp/stderr"
+  code=$?
+  if [ "$code" -ne 0 ]; then
+    pass "smoke/auth-me.sh：路由不存在（404）時回非 0"
+  else
+    fail "smoke/auth-me.sh 路由不存在：預期非 0，實際 code=${code}"
+  fi
+}
+
 test_request_success
 test_request_connection_refused
 test_request_sends_method_and_body
@@ -164,6 +193,7 @@ test_expect_functions
 test_wait_for_status_until_ready
 test_wait_for_status_timeout
 test_smoke_health
+test_smoke_auth_me
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures 個測試失敗"

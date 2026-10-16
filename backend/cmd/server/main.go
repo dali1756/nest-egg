@@ -11,6 +11,8 @@ import (
 	"time"
 	_ "time/tzdata"
 
+	"nest-egg/backend/db/migrations"
+	"nest-egg/backend/internal/auth"
 	"nest-egg/backend/internal/platform/config"
 	"nest-egg/backend/internal/platform/db"
 	"nest-egg/backend/internal/platform/health"
@@ -51,12 +53,18 @@ func run() error {
 	cc := pool.Config().ConnConfig
 	slog.Info("database connected", "host", cc.Host, "port", cc.Port, "database", cc.Database, "user", cc.User)
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/health", health.NewHandler(pool).Get)
+	if err := db.Migrate(ctx, pool, migrations.FS); err != nil {
+		return fmt.Errorf("migrate database: %w", err)
+	}
+
+	a, err := auth.New(auth.Config{SessionSecret: cfg.SessionSecret, CookieSecure: cfg.CookieSecure}, auth.NewRepository(pool), slog.Default())
+	if err != nil {
+		return fmt.Errorf("set up auth: %w", err)
+	}
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           middleware.AccessLog(mux),
+		Handler:           newHandler(pool, a),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -79,4 +87,11 @@ func run() error {
 		return fmt.Errorf("shutdown http server: %w", err)
 	}
 	return nil
+}
+
+func newHandler(pinger health.Pinger, a *auth.Auth) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/health", health.NewHandler(pinger).Get)
+	a.Routes(mux)
+	return middleware.AccessLog(http.NewCrossOriginProtection().Handler(a.Middleware(mux)))
 }

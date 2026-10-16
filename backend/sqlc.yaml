@@ -1,0 +1,12 @@
+# 產生程式碼：cd backend && go tool sqlc generate（產出要進版控）
+version: "2"
+sql:
+  - engine: postgresql
+    schema: db/migrations
+    queries: db/queries
+    gen:
+      go:
+        package: dbgen
+        out: internal/platform/db/dbgen
+        sql_package: pgx/v5
+        emit_interface: false

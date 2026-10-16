@@ -56,11 +56,12 @@ nest-egg/
 ├── backend/
 │   ├── cmd/server/main.go     # 程式進入點：讀設定、連 DB、註冊路由、啟動排程
 │   ├── internal/
+│   │   ├── auth/              # 會員：Authboss 設定、users 的 storer、/api/auth/me、RequireUser
 │   │   ├── currency/          # 幣別
 │   │   ├── fx/                # 換匯交易：handler.go / service.go / repository.go
 │   │   ├── rate/              # 匯率：RateProvider interface、排程、rate_snapshots
 │   │   ├── stock/             # 第 4 階段
-│   │   └── platform/          # config、db、health（健康檢查）、middleware（access log）
+│   │   └── platform/          # config、db（連線、migration、sqlc 產生的 dbgen）、health（健康檢查）、middleware（access log）
 │   ├── db/
 │   │   ├── migrations/        # goose
 │   │   └── queries/           # sqlc 的 .sql
@@ -70,7 +71,7 @@ nest-egg/
 │   └── go.mod                 # module nest-egg/backend
 ├── frontend/
 │   ├── Dockerfile             # 開發用映像（Vite）
-│   └── src/{api,pages,components,hooks,lib}
+│   └── src/{api,pages,components,hooks,test}  # routes.tsx 定義路由
 ├── docs/
 │   └── architecture.md
 ├── docker-compose.yml         # 開發環境：db、backend、frontend 一起啟動
@@ -149,7 +150,11 @@ JSON 中的金額與匯率一律用字串。
 
 | 方法與路徑 | 用途 | 階段 |
 |---|---|---|
-| `GET /api/health` | 健康檢查：每次實際 ping 資料庫，連不到回 503 | 0 |
+| `GET /api/health` | 健康檢查：每次實際 ping 資料庫，連不到回 503；不需登入 | 0 |
+| `POST /api/auth/register` | 註冊（email、password、confirm_password），成功後直接登入；欄位錯誤 422、email 已存在 409 | 會員 |
+| `POST /api/auth/login` | 登入；帳密錯誤 401 | 會員 |
+| `POST /api/auth/logout` | 登出 | 會員 |
+| `GET /api/auth/me` | 目前使用者 `{"email":"..."}`；未登入 401 | 會員 |
 | `GET /api/currencies` | 幣別清單 | 1 |
 | `GET /api/fx-trades` | 換匯交易列表（可用 `from`、`to` 篩選日期） | 1 |
 | `POST /api/fx-trades` | 新增換匯交易 | 1 |
@@ -234,4 +239,6 @@ type RateProvider interface {
 
 - **開發：** `docker-compose up` 一次啟動 PostgreSQL（本機 `localhost:5433`，TZ=Asia/Taipei）、Go 後端（`localhost:8080`，air 熱重載）與 Vite 開發伺服器（`localhost:5173`）；Vite 用 proxy 把 `/api` 轉到後端，不用處理 CORS。啟動與驗證步驟見 README。
 - **正式環境：** 可用 `embed` 把前端 build 出來的檔案包進 Go 執行檔，只部署一個檔案。
-- **登入：** 第一版只在本機跑，先不做。放上網路前必須加登入與 HTTPS，因為是財務資料。
+- **登入：** 用 Authboss（`github.com/aarondl/authboss/v3`）的 auth、register、logout 模組，回應一律 JSON。密碼只存 bcrypt 雜湊；session 存在加密、簽章的 HttpOnly cookie（`SameSite=Lax`、7 天，金鑰由 `SESSION_SECRET` 以 HKDF 推導）；跨站的 POST/PUT/PATCH/DELETE 由 `http.CrossOriginProtection` 擋下。之後的業務 API 套 `auth.RequireUser` 要求登入。
+  - 外層 middleware 若包裝 `ResponseWriter`，必須實作 `UnderlyingResponseWriter()`，否則 Authboss 寫 session 時會 panic。
+  - 放上網路前還要：HTTPS（`COOKIE_SECURE` 維持預設 true）、登入次數限制（rate limit 或 Authboss 的 lock 模組）；若需要「登出所有裝置」，改成伺服器端 session。
