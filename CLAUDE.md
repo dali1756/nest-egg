@@ -46,6 +46,14 @@
 - 整個開發環境的端對端檢查由使用者執行 `/nest-egg-verify`；Claude 不自行啟動或停止容器。
 - 自訂 skill 放在 `.claude/skills/nest-egg-*/` 並進版控；`.claude/` 的其他內容不進版控。
 
+## Commit 慣例
+
+- 格式：`<type>(<scope>): <摘要>`，摘要用英文祈使句、不加句點、50 字元以內，例如 `feat(BE): add member auth with Authboss`。
+- type：`feat` 新功能、`fix` 修 bug、`refactor` 不改行為的重構、`test` 只動測試、`docs` 只動文件、`chore` 依賴、設定、工具。
+- scope：`BE`（`backend/`）、`FE`（`frontend/`）。只動根目錄設定、`docs/`、`.claude/skills/` 時省略 scope，例如 `docs: ...`、`chore: ...`。
+- 一個 commit 只放一邊；同時改前後端就拆成兩個，後端先 commit，讓每個 commit 單獨 checkout 都能跑。跟某一邊綁在一起的共用檔跟著那一邊（例如後端新增的環境變數連同 `.env.example`、`docker-compose.yml` 放進 BE commit）。
+- 內文用條列寫改了什麼、為什麼；小改動只寫摘要即可。
+
 ## 打包成 docker 測試資料庫有無連線上
 ```bash
 docker-compose up
