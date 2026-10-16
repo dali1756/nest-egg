@@ -1,9 +1,6 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Link, Outlet, useNavigate } from 'react-router'
-import { logout } from '../api/auth'
-import { currentUserKey, useCurrentUser } from '../hooks/useCurrentUser'
-import Button from './Button'
-import TextLink from './TextLink'
+import { Link, Outlet } from 'react-router'
+import { useCurrentUser } from '../hooks/useCurrentUser'
+import UserMenu from './UserMenu'
 
 function BrandMark() {
   return (
@@ -20,28 +17,6 @@ function BrandMark() {
         fill="#fff"
       />
     </svg>
-  )
-}
-
-function UserMenu({ email }: { email: string }) {
-  const queryClient = useQueryClient()
-  const navigate = useNavigate()
-  const mutation = useMutation({
-    mutationFn: logout,
-    onSuccess: () => {
-      queryClient.setQueryData(currentUserKey, null)
-      navigate('/login', { replace: true })
-    },
-  })
-
-  return (
-    <div className="ml-auto flex min-w-0 items-center gap-3">
-      <span className="truncate text-sm text-muted-foreground">{email}</span>
-      <TextLink to="/change-password">變更密碼</TextLink>
-      <Button type="button" variant="quiet" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
-        登出
-      </Button>
-    </div>
   )
 }
 

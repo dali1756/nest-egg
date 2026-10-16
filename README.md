@@ -56,7 +56,6 @@ bash .claude/skills/nest-egg-verify/scripts/verify-stack.sh
   ```bash
   docker-compose exec db psql -U admin -d nest_egg -c "UPDATE users SET locked = 0 WHERE email = 'me@example.com';"
   ```
-- 登入後右上角有「變更密碼」，要輸入目前的密碼；變更後其他裝置會全部登出。
 - 註冊、登入、忘記密碼、重設密碼、變更密碼同一個 IP 每分鐘最多約 10 次，超過會顯示「嘗試次數過多，請稍後再試」。
 - 「忘記密碼」要等接上 SMTP 才開放，目前畫面會顯示尚未開放（見 [docs/architecture.md](docs/architecture.md) 第 10 節）。
 - 會員功能是自己實作的（`backend/internal/auth`），設計見 [docs/architecture.md](docs/architecture.md)。API：`POST /api/auth/register`、`POST /api/auth/login`、`POST /api/auth/logout`、`GET /api/auth/me`、`POST /api/auth/password/forgot`、`POST /api/auth/password/reset`、`POST /api/auth/password/change`。`/api/health` 不需要登入。
