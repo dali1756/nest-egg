@@ -61,11 +61,25 @@ h2 {
   border-bottom: 1px solid var(--border);
 }
 
-.site-header .container {
+.site-header-inner {
   display: flex;
   align-items: center;
   gap: 10px;
   height: 64px;
+  padding: 0 24px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 8px;
+  text-decoration: none;
+}
+
+.brand:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
 }
 
 .brand-mark {
@@ -248,5 +262,168 @@ h2 {
 @media (prefers-reduced-motion: reduce) {
   .status-dot.checking {
     animation: none;
+  }
+}
+
+.page-message {
+  margin-top: 48px;
+  color: var(--muted-foreground);
+}
+
+.user-menu {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  margin-left: auto;
+}
+
+.user-email {
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.button.button-quiet {
+  flex: none;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--primary);
+}
+
+.button.button-quiet:hover:not(:disabled) {
+  border-color: var(--primary);
+  background: var(--card);
+}
+
+.button-block {
+  width: 100%;
+  padding: 11px 16px;
+  font-size: 15px;
+}
+
+.auth-page {
+  display: flex;
+  justify-content: center;
+  padding-top: 56px;
+  padding-bottom: 56px;
+}
+
+.auth-card {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 400px;
+  padding: 32px 28px;
+}
+
+.auth-title {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.auth-lead {
+  margin: 6px 0 24px;
+  color: var(--muted-foreground);
+  font-size: 14px;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.auth-switch {
+  margin: 20px 0 0;
+  color: var(--muted-foreground);
+  font-size: 14px;
+  text-align: center;
+}
+
+.link {
+  margin-left: 4px;
+  border-radius: 4px;
+  color: var(--primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.link:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-label {
+  color: var(--heading);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.input {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 15px;
+  transition: border-color 0.15s;
+}
+
+.input:hover {
+  border-color: var(--ring);
+}
+
+.input:focus-visible {
+  border-color: var(--brand);
+  outline: 3px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.input[aria-invalid='true'] {
+  border-color: var(--destructive);
+}
+
+.field-hint,
+.field-error {
+  margin: 0;
+  font-size: 13px;
+}
+
+.field-hint {
+  color: var(--muted-foreground);
+}
+
+.field-error {
+  color: var(--destructive-text);
+}
+
+.form-alert {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--destructive-soft);
+  color: var(--destructive-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+@media (max-width: 480px) {
+  .brand-tagline {
+    display: none;
   }
 }

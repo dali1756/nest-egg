@@ -4,7 +4,6 @@ type Health = { status: string; database: 'up' | 'down' }
 type Status = 'checking' | 'ok' | 'error' | 'unknown'
 type Row = { name: string; detail: string; status: Status }
 
-// 後端連不到時，Vite proxy 會回 502 且沒有 JSON，統一回傳 null
 async function fetchHealth(): Promise<Health | null> {
   try {
     const res = await fetch('/api/health')
@@ -33,24 +32,6 @@ function toRows(health: Health | null | undefined): Row[] {
   return [backend, database]
 }
 
-function BrandMark() {
-  return (
-    <svg className="brand-mark" width="32" height="32" viewBox="0 0 32 32" aria-hidden="true">
-      <defs>
-        <linearGradient id="brand-gradient" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#fb923c" />
-          <stop offset="1" stopColor="#ea580c" />
-        </linearGradient>
-      </defs>
-      <rect width="32" height="32" rx="9" fill="url(#brand-gradient)" />
-      <path
-        d="M16 5.5c-3.9 0-7.5 6.4-7.5 12.1 0 5.1 3.3 8.9 7.5 8.9s7.5-3.8 7.5-8.9C23.5 11.9 19.9 5.5 16 5.5Z"
-        fill="#fff"
-      />
-    </svg>
-  )
-}
-
 function StatusRow({ name, detail, status }: Row) {
   return (
     <li className="status-row">
@@ -63,7 +44,7 @@ function StatusRow({ name, detail, status }: Row) {
   )
 }
 
-function App() {
+function StatusPage() {
   const [health, setHealth] = useState<Health | null>()
 
   useEffect(() => {
@@ -78,35 +59,25 @@ function App() {
   const checking = health === undefined
 
   return (
-    <>
-      <header className="site-header">
-        <div className="container">
-          <BrandMark />
-          <span className="brand-name">nest-egg</span>
-          <span className="brand-tagline">個人資產追蹤</span>
+    <main className="container">
+      <h1 className="page-title">系統狀態</h1>
+      <p className="page-lead">確認前端、後端 API 與資料庫之間的連線是否正常。</p>
+
+      <section className="card">
+        <div className="card-header">
+          <h2 className="card-title">連線檢查</h2>
+          <button type="button" className="button" onClick={recheck} disabled={checking}>
+            {checking ? '檢查中…' : '重新檢查'}
+          </button>
         </div>
-      </header>
-
-      <main className="container">
-        <h1 className="page-title">系統狀態</h1>
-        <p className="page-lead">確認前端、後端 API 與資料庫之間的連線是否正常。</p>
-
-        <section className="card">
-          <div className="card-header">
-            <h2 className="card-title">連線檢查</h2>
-            <button type="button" className="button" onClick={recheck} disabled={checking}>
-              {checking ? '檢查中…' : '重新檢查'}
-            </button>
-          </div>
-          <ul className="status-list" aria-live="polite">
-            {toRows(health).map((row) => (
-              <StatusRow key={row.name} {...row} />
-            ))}
-          </ul>
-        </section>
-      </main>
-    </>
+        <ul className="status-list" aria-live="polite">
+          {toRows(health).map((row) => (
+            <StatusRow key={row.name} {...row} />
+          ))}
+        </ul>
+      </section>
+    </main>
   )
 }
 
-export default App
+export default StatusPage

@@ -4,11 +4,15 @@
 
 ## 啟動開發環境
 
-只需要 Docker Desktop。第一次使用先建立 `.env`，填入資料庫密碼：
+只需要 Docker Desktop。第一次使用先建立 `.env`，填入資料庫密碼與 session 金鑰：
 
 ```bash
 cp .env.example .env
+# SESSION_SECRET 可用下面的指令產生
+openssl rand -hex 32
 ```
+
+`SESSION_SECRET` 是登入 cookie 的加密金鑰，沒填的話 `docker-compose up` 會直接報錯，如有多台電腦開發可以各自產生，換金鑰只會讓已登入的 session 失效。
 
 之後每次只要：
 
@@ -39,12 +43,28 @@ docker-compose up
 2. `docker-compose logs backend`：有 `database connected ... user=admin`。後端啟動時會先 ping 資料庫，帳密或主機設定錯誤會直接啟動失敗並印出原因。
 3. `curl -i http://localhost:8080/api/health`：回 `200` 與 `{"status":"ok","database":"up"}`。每次請求都會實際 ping 資料庫。
 4. 反向測試：`docker-compose stop db` 後再 curl 一次，應該變成 `503` 與 `{"status":"unavailable","database":"down"}`；`docker compose start db` 後恢復 `200`，後端不用重啟。
-5. 瀏覽器開 http://localhost:5173：畫面顯示後端與資料庫的狀態，走的是「瀏覽器 --> Vite proxy --> Go --> PostgreSQL」整條路徑。
 
 以上步驟可以一次自動跑完（會先 `docker compose up -d`；反向測試會暫停 db 幾秒，結束時自動恢復）：
 
 ```bash
 bash .claude/skills/nest-egg-verify/scripts/verify-stack.sh
+```
+
+## 會員與登入
+
+- 第一次使用先到 http://localhost:5173/register 建立帳號（email + 密碼），註冊後直接登入。
+- 密碼至少 8 個字元，並包含大寫、小寫英文字母、數字與符號；資料庫只存 bcrypt 雜湊。
+- 登入後的首頁暫時是「系統狀態」頁，之後會換成正式首頁。
+- 後端用 [Authboss](https://github.com/aarondl/authboss)（`github.com/aarondl/authboss/v3`）處理註冊、登入、登出，session 存在加密的 HttpOnly cookie（7 天）。API：`POST /api/auth/register`、`POST /api/auth/login`、`POST /api/auth/logout`、`GET /api/auth/me`。`/api/health` 不需要登入。
+- 跨站的 POST 會被擋下（回 403，Go 內建的 `http.CrossOriginProtection`）。
+
+## 資料庫 migration 與 sqlc
+
+- 資料表定義在 `backend/db/migrations/`（goose 格式），後端啟動時自動套用尚未執行的 migration。
+- SQL 查詢寫在 `backend/db/queries/`，改完後產生 Go 程式碼（sqlc 版本固定在 `go.mod`，第一次執行要編譯約 1 分鐘；產出要進版控）：
+
+```bash
+cd backend && go tool sqlc generate
 ```
 
 ## 測試
@@ -54,6 +74,7 @@ bash .claude/skills/nest-egg-verify/scripts/verify-stack.sh
 ```bash
 go -C backend vet ./...
 go -C backend test ./...
+pnpm -C frontend test
 ```
 
 本機沒有安裝 Go 的話，改在後端容器裡執行（容器要先啟動）：
@@ -61,6 +82,12 @@ go -C backend test ./...
 ```bash
 docker-compose exec backend go vet ./...
 docker-compose exec backend go test ./...
+```
+
+需要資料庫的整合測試要設定 `TEST_DATABASE_URL`，沒設定的話會略過（後端容器裡已經設好）：
+
+```bash
+TEST_DATABASE_URL='postgres://admin:<密碼>@127.0.0.1:5433/nest_egg?sslmode=disable' go -C backend test ./...
 ```
 
 ## 不透過 Docker 跑後端或前端（看個人選用）
