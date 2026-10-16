@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
-
-	"golang.org/x/crypto/bcrypt"
 )
 
 const (
+	defaultBcryptCost    = 12
+	maxTokenLen          = 64
 	maxFailedLogins      = 3
 	sessionIdleTimeout   = 24 * time.Hour
 	sessionLifetime      = 7 * 24 * time.Hour
@@ -20,6 +20,7 @@ const (
 
 var (
 	ErrInvalidCredentials = errors.New("invalid credentials")
+	ErrWrongPassword      = errors.New("current password is incorrect")
 	ErrAccountLocked      = errors.New("account locked")
 	ErrEmailTaken         = errors.New("email already registered")
 	ErrNoSession          = errors.New("no valid session")
@@ -66,6 +67,8 @@ type Store interface {
 	ReserveLoginAttempt(ctx context.Context, userID int64, maxFailures int) (bool, error)
 	LockIfFailuresExhausted(ctx context.Context, userID int64, maxFailures int) (bool, error)
 	ClearLoginFailures(ctx context.Context, userID int64) error
+	UpdatePasswordHash(ctx context.Context, userID int64, passwordHash string) error
+	ChangePassword(ctx context.Context, userID int64, passwordHash string) error
 
 	CreateSession(ctx context.Context, s NewSession) error
 	SessionByTokenHash(ctx context.Context, tokenHash []byte) (Session, error)
@@ -100,7 +103,7 @@ type Service struct {
 func NewService(store Store, cfg Config, log *slog.Logger) (*Service, error) {
 	cost := cfg.BcryptCost
 	if cost == 0 {
-		cost = bcrypt.DefaultCost
+		cost = defaultBcryptCost
 	}
 	hasher, err := newPasswordHasher(cost)
 	if err != nil {
@@ -121,15 +124,9 @@ type RegisterInput struct {
 
 func (s *Service) Register(ctx context.Context, in RegisterInput) (User, string, error) {
 	email := normalizeEmail(in.Email)
-	fields := map[string]string{}
+	fields := passwordFieldErrors(in.Password, in.ConfirmPassword)
 	if !validEmail(email) {
 		fields["email"] = "must be a valid email address"
-	}
-	if err := validatePassword(in.Password); err != nil {
-		fields["password"] = err.Error()
-	}
-	if in.ConfirmPassword != in.Password {
-		fields["confirm_password"] = "does not match password"
 	}
 	if len(fields) > 0 {
 		return User{}, "", &ValidationError{Fields: fields}
@@ -155,10 +152,11 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (User, string,
 }
 
 func (s *Service) Login(ctx context.Context, email, password string) (User, string, error) {
-	if password == "" || len(password) > maxBcryptBytes {
+	email = normalizeEmail(email)
+	if password == "" || len(password) > maxBcryptBytes || len(email) > maxEmailLen {
 		return User{}, "", ErrInvalidCredentials
 	}
-	u, err := s.store.UserByEmail(ctx, normalizeEmail(email))
+	u, err := s.store.UserByEmail(ctx, email)
 	if errors.Is(err, ErrNotFound) {
 		s.hasher.waste(password)
 		s.log.InfoContext(ctx, "login failed", "reason", "unknown_email")
@@ -167,31 +165,18 @@ func (s *Service) Login(ctx context.Context, email, password string) (User, stri
 	if err != nil {
 		return User{}, "", fmt.Errorf("get user: %w", err)
 	}
-
-	reserved, err := s.store.ReserveLoginAttempt(ctx, u.ID, maxFailedLogins)
-	if err != nil {
-		return User{}, "", fmt.Errorf("reserve login attempt: %w", err)
-	}
-	if !reserved {
-		s.log.InfoContext(ctx, "login rejected", "reason", "locked", "user_id", u.ID)
-		return User{}, "", ErrAccountLocked
+	if err := s.checkPassword(ctx, "login", u, password); err != nil {
+		return User{}, "", err
 	}
 
-	if !s.hasher.matches(u.PasswordHash, password) {
-		locked, err := s.store.LockIfFailuresExhausted(ctx, u.ID, maxFailedLogins)
+	if s.hasher.needsRehash(u.PasswordHash) {
+		hash, err := s.hasher.hash(password)
 		if err != nil {
-			return User{}, "", fmt.Errorf("lock account: %w", err)
+			return User{}, "", fmt.Errorf("rehash password: %w", err)
 		}
-		if locked {
-			s.log.WarnContext(ctx, "account locked", "user_id", u.ID, "failed_logins", maxFailedLogins)
-			return User{}, "", ErrAccountLocked
+		if err := s.store.UpdatePasswordHash(ctx, u.ID, hash); err != nil {
+			return User{}, "", fmt.Errorf("store rehashed password: %w", err)
 		}
-		s.log.InfoContext(ctx, "login failed", "reason", "wrong_password", "user_id", u.ID)
-		return User{}, "", ErrInvalidCredentials
-	}
-
-	if err := s.store.ClearLoginFailures(ctx, u.ID); err != nil {
-		return User{}, "", fmt.Errorf("clear login failures: %w", err)
 	}
 	token, err := s.startSession(ctx, u.ID)
 	if err != nil {
@@ -199,6 +184,86 @@ func (s *Service) Login(ctx context.Context, email, password string) (User, stri
 	}
 	s.log.InfoContext(ctx, "login succeeded", "user_id", u.ID)
 	return User{ID: u.ID, Email: u.Email}, token, nil
+}
+
+// checkPassword 比對密碼並記錄失敗次數，登入和變更密碼共用同一個鎖定機制。
+func (s *Service) checkPassword(ctx context.Context, action string, u UserRecord, password string) error {
+	if password == "" || len(password) > maxBcryptBytes {
+		return ErrInvalidCredentials
+	}
+	reserved, err := s.store.ReserveLoginAttempt(ctx, u.ID, maxFailedLogins)
+	if err != nil {
+		return fmt.Errorf("reserve attempt: %w", err)
+	}
+	if !reserved {
+		s.log.InfoContext(ctx, "password check rejected", "action", action, "reason", "locked", "user_id", u.ID)
+		return ErrAccountLocked
+	}
+
+	if !s.hasher.matches(u.PasswordHash, password) {
+		locked, err := s.store.LockIfFailuresExhausted(ctx, u.ID, maxFailedLogins)
+		if err != nil {
+			return fmt.Errorf("lock account: %w", err)
+		}
+		if locked {
+			s.log.WarnContext(ctx, "account locked", "action", action, "user_id", u.ID, "failed_attempts", maxFailedLogins)
+			return ErrAccountLocked
+		}
+		s.log.InfoContext(ctx, "password check failed", "action", action, "reason", "wrong_password", "user_id", u.ID)
+		return ErrInvalidCredentials
+	}
+
+	if err := s.store.ClearLoginFailures(ctx, u.ID); err != nil {
+		return fmt.Errorf("clear failures: %w", err)
+	}
+	return nil
+}
+
+type ChangePasswordInput struct {
+	CurrentPassword string
+	Password        string
+	ConfirmPassword string
+}
+
+func (s *Service) ChangePassword(ctx context.Context, user User, in ChangePasswordInput) (string, error) {
+	if fields := passwordFieldErrors(in.Password, in.ConfirmPassword); len(fields) > 0 {
+		return "", &ValidationError{Fields: fields}
+	}
+	u, err := s.store.UserByEmail(ctx, user.Email)
+	if err != nil {
+		return "", fmt.Errorf("get user: %w", err)
+	}
+	if err := s.checkPassword(ctx, "change_password", u, in.CurrentPassword); err != nil {
+		if errors.Is(err, ErrInvalidCredentials) {
+			return "", ErrWrongPassword
+		}
+		return "", err
+	}
+
+	hash, err := s.hasher.hash(in.Password)
+	if err != nil {
+		return "", fmt.Errorf("hash password: %w", err)
+	}
+	if err := s.store.ChangePassword(ctx, u.ID, hash); err != nil {
+		return "", fmt.Errorf("change password: %w", err)
+	}
+	token, err := s.startSession(ctx, u.ID)
+	if err != nil {
+		return "", err
+	}
+	s.log.InfoContext(ctx, "password changed", "user_id", u.ID)
+	return token, nil
+}
+
+func passwordFieldErrors(password, confirm string) map[string]string {
+	fields := map[string]string{}
+	if err := validatePassword(password); err != nil {
+		fields["password"] = err.Error()
+	}
+	if confirm != password {
+		fields["confirm_password"] = "does not match password"
+	}
+	return fields
 }
 
 func (s *Service) startSession(ctx context.Context, userID int64) (string, error) {
@@ -220,7 +285,7 @@ func (s *Service) startSession(ctx context.Context, userID int64) (string, error
 }
 
 func (s *Service) Authenticate(ctx context.Context, token string) (User, error) {
-	if token == "" {
+	if token == "" || len(token) > maxTokenLen {
 		return User{}, ErrNoSession
 	}
 	hash := hashToken(token)
@@ -277,7 +342,11 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) error 
 	if s.mailer == nil {
 		return ErrResetUnavailable
 	}
-	u, err := s.store.UserByEmail(ctx, normalizeEmail(email))
+	email = normalizeEmail(email)
+	if len(email) > maxEmailLen {
+		return nil
+	}
+	u, err := s.store.UserByEmail(ctx, email)
 	if errors.Is(err, ErrNotFound) {
 		s.log.InfoContext(ctx, "password reset requested", "reason", "unknown_email")
 		return nil
@@ -305,17 +374,10 @@ type ResetPasswordInput struct {
 
 // ResetPassword 成功後所有裝置都會被登出，要用新密碼重新登入。
 func (s *Service) ResetPassword(ctx context.Context, in ResetPasswordInput) error {
-	fields := map[string]string{}
-	if err := validatePassword(in.Password); err != nil {
-		fields["password"] = err.Error()
-	}
-	if in.ConfirmPassword != in.Password {
-		fields["confirm_password"] = "does not match password"
-	}
-	if len(fields) > 0 {
+	if fields := passwordFieldErrors(in.Password, in.ConfirmPassword); len(fields) > 0 {
 		return &ValidationError{Fields: fields}
 	}
-	if in.Token == "" {
+	if in.Token == "" || len(in.Token) > maxTokenLen {
 		return ErrInvalidResetToken
 	}
 

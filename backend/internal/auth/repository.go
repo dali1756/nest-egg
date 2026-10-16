@@ -167,19 +167,36 @@ func (r *Repository) ResetPassword(ctx context.Context, tokenHash []byte, passwo
 			return fmt.Errorf("delete reset token: %w", err)
 		}
 		userID = row.UserID
-		if err := q.UpdatePasswordHash(ctx, dbgen.UpdatePasswordHashParams{ID: userID, PasswordHash: passwordHash}); err != nil {
-			return fmt.Errorf("update password: %w", err)
-		}
-		if err := q.DeleteUserSessions(ctx, userID); err != nil {
-			return fmt.Errorf("delete sessions: %w", err)
-		}
-		if err := q.DeleteUserPasswordResetTokens(ctx, userID); err != nil {
-			return fmt.Errorf("delete other reset tokens: %w", err)
-		}
-		return nil
+		return replacePassword(ctx, q, userID, passwordHash)
 	})
 	if err != nil {
 		return 0, err
 	}
 	return userID, nil
+}
+
+func (r *Repository) ChangePassword(ctx context.Context, userID int64, passwordHash string) error {
+	return r.inTx(ctx, func(q *dbgen.Queries) error {
+		return replacePassword(ctx, q, userID, passwordHash)
+	})
+}
+
+func replacePassword(ctx context.Context, q *dbgen.Queries, userID int64, passwordHash string) error {
+	if err := q.UpdatePasswordHash(ctx, dbgen.UpdatePasswordHashParams{ID: userID, PasswordHash: passwordHash}); err != nil {
+		return fmt.Errorf("update password: %w", err)
+	}
+	if err := q.DeleteUserSessions(ctx, userID); err != nil {
+		return fmt.Errorf("delete sessions: %w", err)
+	}
+	if err := q.DeleteUserPasswordResetTokens(ctx, userID); err != nil {
+		return fmt.Errorf("delete reset tokens: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) UpdatePasswordHash(ctx context.Context, userID int64, passwordHash string) error {
+	if err := r.q.UpdatePasswordHash(ctx, dbgen.UpdatePasswordHashParams{ID: userID, PasswordHash: passwordHash}); err != nil {
+		return fmt.Errorf("update password: %w", err)
+	}
+	return nil
 }

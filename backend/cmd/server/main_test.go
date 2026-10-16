@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +16,7 @@ import (
 
 	"nest-egg/backend/internal/auth"
 	"nest-egg/backend/internal/auth/authtest"
+	"nest-egg/backend/internal/platform/config"
 )
 
 type okPinger struct{}
@@ -36,7 +39,7 @@ func newTestHandler(t *testing.T) http.Handler {
 	if err != nil {
 		t.Fatalf("auth.NewService: %v", err)
 	}
-	return newHandler(okPinger{}, auth.NewHandler(svc, false, log), false)
+	return newHandler(okPinger{}, newAuthHandler(svc, config.Config{}, log), false)
 }
 
 func serve(h http.Handler, req *http.Request) *httptest.ResponseRecorder {
@@ -145,5 +148,55 @@ func TestHealthIsPublic(t *testing.T) {
 	rec := serve(h, req)
 	if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != `{"status":"ok","database":"up"}` {
 		t.Errorf("health = %d %s, want 200 {\"status\":\"ok\",\"database\":\"up\"}", rec.Code, rec.Body)
+	}
+}
+
+func TestCredentialEndpointsAreRateLimited(t *testing.T) {
+	h := newTestHandler(t)
+	for i := 1; i <= 10; i++ {
+		if rec := serve(h, loginRequest("Wr0ngpass!")); rec.Code == http.StatusTooManyRequests {
+			t.Fatalf("login %d = 429, want allowed within the first 10", i)
+		}
+	}
+	rec := serve(h, loginRequest("Passw0rd!"))
+	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") == "" {
+		t.Errorf("11th login = %d, Retry-After %q; want 429 with Retry-After", rec.Code, rec.Header().Get("Retry-After"))
+	}
+
+	if rec := serve(h, httptest.NewRequest(http.MethodGet, "/api/health", nil)); rec.Code != http.StatusOK {
+		t.Errorf("health while limited = %d, want 200 (not rate limited)", rec.Code)
+	}
+}
+
+func TestSpoofedForwardedForDoesNotBypassTheLimit(t *testing.T) {
+	h := newTestHandler(t)
+	for i := 1; i <= 10; i++ {
+		req := loginRequest("Wr0ngpass!")
+		req.Header.Set("X-Forwarded-For", "198.51.100."+strconv.Itoa(i))
+		serve(h, req)
+	}
+	req := loginRequest("Wr0ngpass!")
+	req.Header.Set("X-Forwarded-For", "198.51.100.99")
+	if rec := serve(h, req); rec.Code != http.StatusTooManyRequests {
+		t.Errorf("11th login with a new X-Forwarded-For = %d, want 429 (header must be ignored without TRUSTED_PROXIES)", rec.Code)
+	}
+}
+
+func TestTrustedProxyForwardedForIsUsed(t *testing.T) {
+	store := authtest.NewMemStore()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	svc, err := auth.NewService(store, auth.Config{BcryptCost: bcrypt.MinCost}, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{TrustedProxies: []netip.Prefix{netip.MustParsePrefix("192.0.2.1/32")}}
+	h := newHandler(okPinger{}, newAuthHandler(svc, cfg, log), false)
+
+	for i := 1; i <= 11; i++ {
+		req := loginRequest("Wr0ngpass!")
+		req.Header.Set("X-Forwarded-For", "198.51.100."+strconv.Itoa(i))
+		if rec := serve(h, req); rec.Code == http.StatusTooManyRequests {
+			t.Fatalf("login %d from a different client behind the proxy = 429, want each client counted separately", i)
+		}
 	}
 }

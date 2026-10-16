@@ -68,6 +68,11 @@ func (h *passwordHasher) hash(password string) (string, error) {
 	return string(b), nil
 }
 
+func (h *passwordHasher) needsRehash(hash string) bool {
+	cost, err := bcrypt.Cost([]byte(hash))
+	return err == nil && cost < h.cost
+}
+
 func (h *passwordHasher) matches(hash, password string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }

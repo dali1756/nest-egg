@@ -16,22 +16,22 @@ cp .env.example .env
 docker-compose up
 ```
 
-| 服務 | 位址 | 說明 |
-|---|---|---|
+| 服務     | 位址                  | 說明                                                        |
+| -------- | --------------------- | ----------------------------------------------------------- |
 | frontend | http://localhost:5173 | Vite 開發伺服器，`/api` 轉給後端；存檔後畫面即時更新（HMR） |
-| backend | http://localhost:8080 | Go API；存檔後 air 自動重新編譯、重啟 |
-| db | `localhost:5433` | PostgreSQL 18，帳密見 `.env`；容器之間用 `db:5432` |
+| backend  | http://localhost:8080 | Go API；存檔後 air 自動重新編譯、重啟                       |
+| db       | `localhost:5433`      | PostgreSQL 18，帳密見 `.env`；容器之間用 `db:5432`          |
 
 常用指令：
 
-| 指令 | 用途 |
-|---|---|
-| `docker-compose up -d` | 在背景啟動 |
-| `docker-compose logs -f backend` | 看後端 log |
-| `docker-compose down` | 停止並移除容器，資料庫資料保留 |
-| `docker-compose down -v` | 連 volume 一起刪除，**資料庫資料會清空** |
-| `docker-compose up --build` | 改了 Dockerfile 之後重建映像 |
-| `docker-compose exec db psql -U admin -d nest_egg` | 進資料庫下 SQL |
+| 指令                                               | 用途                                     |
+| -------------------------------------------------- | ---------------------------------------- |
+| `docker-compose up -d`                             | 在背景啟動                               |
+| `docker-compose logs -f backend`                   | 看後端 log                               |
+| `docker-compose down`                              | 停止並移除容器，資料庫資料保留           |
+| `docker-compose down -v`                           | 連 volume 一起刪除，**資料庫資料會清空** |
+| `docker-compose up --build`                        | 改了 Dockerfile 之後重建映像             |
+| `docker-compose exec db psql -U admin -d nest_egg` | 進資料庫下 SQL                           |
 
 ## 確認後端真的連上資料庫
 
@@ -56,8 +56,10 @@ bash .claude/skills/nest-egg-verify/scripts/verify-stack.sh
   ```bash
   docker-compose exec db psql -U admin -d nest_egg -c "UPDATE users SET locked = 0 WHERE email = 'me@example.com';"
   ```
+- 登入後右上角有「變更密碼」，要輸入目前的密碼；變更後其他裝置會全部登出。
+- 註冊、登入、忘記密碼、重設密碼、變更密碼同一個 IP 每分鐘最多約 10 次，超過會顯示「嘗試次數過多，請稍後再試」。
 - 「忘記密碼」要等接上 SMTP 才開放，目前畫面會顯示尚未開放（見 [docs/architecture.md](docs/architecture.md) 第 10 節）。
-- 會員功能是自己實作的（`backend/internal/auth`），設計見 [docs/architecture.md](docs/architecture.md) 第 9 節。API：`POST /api/auth/register`、`POST /api/auth/login`、`POST /api/auth/logout`、`GET /api/auth/me`、`POST /api/auth/password/forgot`、`POST /api/auth/password/reset`。`/api/health` 不需要登入。
+- 會員功能是自己實作的（`backend/internal/auth`），設計見 [docs/architecture.md](docs/architecture.md)。API：`POST /api/auth/register`、`POST /api/auth/login`、`POST /api/auth/logout`、`GET /api/auth/me`、`POST /api/auth/password/forgot`、`POST /api/auth/password/reset`、`POST /api/auth/password/change`。`/api/health` 不需要登入。
 - 跨站的 POST 會被擋下（回 403，Go 內建的 `http.CrossOriginProtection`）。
 
 ## 資料庫 migration 與 sqlc

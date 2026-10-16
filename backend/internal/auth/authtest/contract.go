@@ -18,6 +18,8 @@ func RunStoreContract(t *testing.T, newStore func(t *testing.T) auth.Store) {
 	t.Run("stale sessions", func(t *testing.T) { testStaleSessions(t, newStore(t)) })
 	t.Run("password reset", func(t *testing.T) { testPasswordReset(t, newStore(t)) })
 	t.Run("password reset keeps lock", func(t *testing.T) { testPasswordResetKeepsLock(t, newStore(t)) })
+	t.Run("change password", func(t *testing.T) { testChangePassword(t, newStore(t)) })
+	t.Run("update password hash", func(t *testing.T) { testUpdatePasswordHash(t, newStore(t)) })
 }
 
 func mustCreateUser(t *testing.T, s auth.Store, email string) int64 {
@@ -254,5 +256,58 @@ func testPasswordResetKeepsLock(t *testing.T, s auth.Store) {
 	}
 	if reserve(t, s, a) {
 		t.Error("reserve after reset on a locked account = true, want false (only a manual unlock clears locked)")
+	}
+}
+
+func testChangePassword(t *testing.T, s auth.Store) {
+	ctx := t.Context()
+	a := mustCreateUser(t, s, "a@example.com")
+	b := mustCreateUser(t, s, "b@example.com")
+	for i, uid := range []int64{a, b} {
+		err := s.CreateSession(ctx, auth.NewSession{TokenHash: []byte{byte(i)}, UserID: uid, LastSeenAt: base, ExpiresAt: base.Add(time.Hour)})
+		if err != nil {
+			t.Fatalf("CreateSession: %v", err)
+		}
+	}
+	createReset(t, s, a, []byte("token"), base.Add(time.Hour))
+	reserve(t, s, a)
+	reserve(t, s, a)
+
+	if err := s.ChangePassword(ctx, a, "new-hash"); err != nil {
+		t.Fatalf("ChangePassword: %v", err)
+	}
+	if u, _ := s.UserByEmail(ctx, "a@example.com"); u.PasswordHash != "new-hash" {
+		t.Errorf("password hash = %q, want new-hash", u.PasswordHash)
+	}
+	for i, wantAlive := range []bool{false, true} {
+		if _, err := s.SessionByTokenHash(ctx, []byte{byte(i)}); (err == nil) != wantAlive {
+			t.Errorf("session %d: alive = %v, want %v", i, err == nil, wantAlive)
+		}
+	}
+	if _, err := s.ResetPassword(ctx, []byte("token"), "other", base); !errors.Is(err, auth.ErrNotFound) {
+		t.Errorf("reset token after change: err = %v, want ErrNotFound", err)
+	}
+	for i := 1; i <= 3; i++ {
+		if !reserve(t, s, a) {
+			t.Fatalf("attempt %d after change: reserve = false, want true (failures cleared)", i)
+		}
+	}
+}
+
+func testUpdatePasswordHash(t *testing.T, s auth.Store) {
+	ctx := t.Context()
+	a := mustCreateUser(t, s, "a@example.com")
+	err := s.CreateSession(ctx, auth.NewSession{TokenHash: []byte("s"), UserID: a, LastSeenAt: base, ExpiresAt: base.Add(time.Hour)})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	if err := s.UpdatePasswordHash(ctx, a, "stronger-hash"); err != nil {
+		t.Fatalf("UpdatePasswordHash: %v", err)
+	}
+	if u, _ := s.UserByEmail(ctx, "a@example.com"); u.PasswordHash != "stronger-hash" {
+		t.Errorf("password hash = %q, want stronger-hash", u.PasswordHash)
+	}
+	if _, err := s.SessionByTokenHash(ctx, []byte("s")); err != nil {
+		t.Errorf("session after UpdatePasswordHash: %v, want kept", err)
 	}
 }

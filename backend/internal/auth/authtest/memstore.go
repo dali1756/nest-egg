@@ -241,16 +241,42 @@ func (m *MemStore) ResetPassword(_ context.Context, tokenHash []byte, passwordHa
 	if !ok || !r.expiresAt.After(now) {
 		return 0, auth.ErrNotFound
 	}
-	u := m.users[r.userID]
+	m.replacePassword(r.userID, passwordHash)
+	return r.userID, nil
+}
+
+func (m *MemStore) ChangePassword(_ context.Context, userID int64, passwordHash string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.err != nil {
+		return m.err
+	}
+	m.replacePassword(userID, passwordHash)
+	return nil
+}
+
+func (m *MemStore) replacePassword(userID int64, passwordHash string) {
+	u := m.users[userID]
 	u.rec.PasswordHash = passwordHash
 	u.failed = 0
 	for k, s := range m.sessions {
-		if s.UserID == r.userID {
+		if s.UserID == userID {
 			delete(m.sessions, k)
 		}
 	}
-	m.deleteResets(r.userID)
-	return r.userID, nil
+	m.deleteResets(userID)
+}
+
+func (m *MemStore) UpdatePasswordHash(_ context.Context, userID int64, passwordHash string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.err != nil {
+		return m.err
+	}
+	u := m.users[userID]
+	u.rec.PasswordHash = passwordHash
+	u.failed = 0
+	return nil
 }
 
 func (m *MemStore) deleteResets(userID int64) {

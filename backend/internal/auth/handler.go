@@ -9,32 +9,56 @@ import (
 	"time"
 )
 
-const sessionCookieName = "nest_egg_session"
+type HandlerConfig struct {
+	CookieSecure bool
+	RateLimit    func(http.Handler) http.Handler
+}
 
 type Handler struct {
 	svc          *Service
 	cookieSecure bool
+	cookieName   string
+	rateLimit    func(http.Handler) http.Handler
 	log          *slog.Logger
 }
 
-func NewHandler(svc *Service, cookieSecure bool, log *slog.Logger) *Handler {
-	return &Handler{svc: svc, cookieSecure: cookieSecure, log: log}
+func NewHandler(svc *Service, cfg HandlerConfig, log *slog.Logger) *Handler {
+	limit := cfg.RateLimit
+	if limit == nil {
+		limit = func(next http.Handler) http.Handler { return next }
+	}
+	return &Handler{
+		svc:          svc,
+		cookieSecure: cfg.CookieSecure,
+		cookieName:   sessionCookieName(cfg.CookieSecure),
+		rateLimit:    limit,
+		log:          log,
+	}
+}
+
+func sessionCookieName(secure bool) string {
+	if secure {
+		return "__Host-nest_egg_session"
+	}
+	return "nest_egg_session"
 }
 
 func (h *Handler) Routes(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/auth/register", h.register)
-	mux.HandleFunc("POST /api/auth/login", h.login)
+	limit := h.rateLimit
+	mux.Handle("POST /api/auth/register", limit(http.HandlerFunc(h.register)))
+	mux.Handle("POST /api/auth/login", limit(http.HandlerFunc(h.login)))
 	mux.HandleFunc("POST /api/auth/logout", h.logout)
 	mux.Handle("GET /api/auth/me", h.RequireUser(http.HandlerFunc(h.me)))
-	mux.HandleFunc("POST /api/auth/password/forgot", h.forgotPassword)
-	mux.HandleFunc("POST /api/auth/password/reset", h.resetPassword)
+	mux.Handle("POST /api/auth/password/forgot", limit(http.HandlerFunc(h.forgotPassword)))
+	mux.Handle("POST /api/auth/password/reset", limit(http.HandlerFunc(h.resetPassword)))
+	mux.Handle("POST /api/auth/password/change", limit(h.RequireUser(http.HandlerFunc(h.changePassword))))
 }
 
 type ctxKey struct{}
 
 func (h *Handler) RequireUser(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := sessionToken(r)
+		token := h.sessionToken(r)
 		user, err := h.svc.Authenticate(r.Context(), token)
 		switch {
 		case errors.Is(err, ErrNoSession):
@@ -120,7 +144,7 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
 	h.clearCookie(w)
-	if err := h.svc.Logout(r.Context(), sessionToken(r)); err != nil {
+	if err := h.svc.Logout(r.Context(), h.sessionToken(r)); err != nil {
 		h.internalError(w, r, err)
 		return
 	}
@@ -176,13 +200,46 @@ func (h *Handler) resetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type changePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	Password        string `json:"password"`
+	ConfirmPassword string `json:"confirm_password"`
+}
+
+func (h *Handler) changePassword(w http.ResponseWriter, r *http.Request) {
+	var req changePasswordRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	user, _ := CurrentUser(r.Context())
+	token, err := h.svc.ChangePassword(r.Context(), user, ChangePasswordInput{
+		CurrentPassword: req.CurrentPassword,
+		Password:        req.Password,
+		ConfirmPassword: req.ConfirmPassword,
+	})
+	var invalid *ValidationError
+	switch {
+	case errors.As(err, &invalid):
+		writeJSON(w, http.StatusUnprocessableEntity, errorResponse{Error: "invalid input", Fields: invalid.Fields})
+	case errors.Is(err, ErrWrongPassword):
+		writeError(w, http.StatusForbidden, "current password is incorrect")
+	case errors.Is(err, ErrAccountLocked):
+		writeError(w, http.StatusLocked, "account locked")
+	case err != nil:
+		h.internalError(w, r, err)
+	default:
+		h.setCookie(w, token)
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
 func (h *Handler) me(w http.ResponseWriter, r *http.Request) {
 	user, _ := CurrentUser(r.Context())
 	writeJSON(w, http.StatusOK, userResponse{Email: user.Email})
 }
 
-func sessionToken(r *http.Request) string {
-	c, err := r.Cookie(sessionCookieName)
+func (h *Handler) sessionToken(r *http.Request) string {
+	c, err := r.Cookie(h.cookieName)
 	if err != nil {
 		return ""
 	}
@@ -191,7 +248,7 @@ func sessionToken(r *http.Request) string {
 
 func (h *Handler) setCookie(w http.ResponseWriter, token string) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
+		Name:     h.cookieName,
 		Value:    token,
 		Path:     "/",
 		MaxAge:   int(sessionLifetime / time.Second),
@@ -203,7 +260,7 @@ func (h *Handler) setCookie(w http.ResponseWriter, token string) {
 
 func (h *Handler) clearCookie(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
+		Name:     h.cookieName,
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,

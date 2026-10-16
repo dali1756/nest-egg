@@ -19,6 +19,8 @@ func TestValidEmail(t *testing.T) {
 		"me@":                                     false,
 		"Me <me@example.com>":                     false,
 		"me@example.com, you@example.com":         false,
+		"ｍｅ@example.com":                          false,
+		"me@exämple.com":                          false,
 		strings.Repeat("a", 243) + "@example.com": false,
 	}
 	for email, want := range tests {

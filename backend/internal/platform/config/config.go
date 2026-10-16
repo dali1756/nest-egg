@@ -4,8 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"os"
 	"strconv"
+
+	"nest-egg/backend/internal/platform/ratelimit"
 )
 
 type Config struct {
@@ -14,7 +17,8 @@ type Config struct {
 	LogLevel    slog.Level
 	LogFormat   string
 
-	CookieSecure bool
+	CookieSecure   bool
+	TrustedProxies []netip.Prefix
 }
 
 func Load() (Config, error) {
@@ -39,6 +43,11 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("parse COOKIE_SECURE: %w", err)
 	}
 	cfg.CookieSecure = secure
+
+	cfg.TrustedProxies, err = ratelimit.ParseTrustedProxies(os.Getenv("TRUSTED_PROXIES"))
+	if err != nil {
+		return Config{}, fmt.Errorf("parse TRUSTED_PROXIES: %w", err)
+	}
 	return cfg, nil
 }
 

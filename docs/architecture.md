@@ -157,6 +157,7 @@ JSON 中的金額與匯率一律用字串。
 | `GET /api/auth/me`                                                        | 目前使用者 `{"email":"..."}`；未登入 401                                                                           | 會員 |
 | `POST /api/auth/password/forgot`                                          | 申請重設密碼（email），不論 email 有沒有註冊都回 202；還沒設定寄信時回 503                                         | 會員 |
 | `POST /api/auth/password/reset`                                           | 重設密碼（token、password、confirm_password），成功回 204；token 無效或過期 400、欄位錯誤 422                      | 會員 |
+| `POST /api/auth/password/change`                                          | 變更密碼（current_password、password、confirm_password），需登入；成功回 204，其他裝置全部登出；目前密碼錯誤 403、帳號鎖定 423、欄位錯誤 422| 會員 |
 | `GET /api/currencies`                                                     | 幣別清單                                                                                                           | 1    |
 | `GET /api/fx-trades`                                                      | 換匯交易列表（可用 `from`、`to` 篩選日期）                                                                         | 1    |
 | `POST /api/fx-trades`                                                     | 新增換匯交易                                                                                                       | 1    |
@@ -243,14 +244,17 @@ type RateProvider interface {
 
 - **開發：** `docker-compose up` 一次啟動 PostgreSQL（本機 `localhost:5433`，TZ=Asia/Taipei）、Go 後端（`localhost:8080`，air 熱重載）與 Vite 開發伺服器（`localhost:5173`）；Vite 用 proxy 把 `/api` 轉到後端，不用處理 CORS。啟動與驗證步驟見 README。
 - **正式環境：** 可用 `embed` 把前端 build 出來的檔案包進 Go 執行檔，只部署一個檔案。
-- **登入：** 自己實作在 `internal/auth`，不用第三方會員套件，回應一律 JSON。跨站的 POST/PUT/PATCH/DELETE 由 `http.CrossOriginProtection` 擋下。之後的業務 API 套 `RequireUser` 要求登入，handler 用 `auth.CurrentUser(ctx)` 取得使用者。
-  - **密碼：** 只存 bcrypt 雜湊（cost 10）。規則：8～64 個字元，只能用英文字母、數字、符號（可列印 ASCII，不含空白），大寫、小寫、數字、符號各至少一個。前後端規則一致：`internal/auth/password.go`、`frontend/src/validation/password.ts`，兩邊的測試案例也一致。
-  - **Session：** 存在 `sessions` 表，cookie 只放 128 bits 的隨機 token（`crypto/rand.Text()`），資料庫只存 token 的 SHA-256。cookie 是 HttpOnly、`SameSite=Lax`，`COOKIE_SECURE=true` 時加 Secure。24 小時沒有需要登入的請求就失效；不論有沒有在用，登入滿 7 天一定失效。`last_seen_at` 最多每分鐘更新一次。登出會刪掉資料庫裡的 session，複製出去的 cookie 也跟著失效。
+- **登入：** 自己實作在 `internal/auth`，不用第三方會員套件，回應一律 JSON。跨站的 POST/PUT/PATCH/DELETE 由 `http.CrossOriginProtection` 擋下。之後的業務 API 套 `RequireUser` 要求登入，handler 用 `auth.CurrentUser(ctx)` 取得使用者。安全強度以 OWASP ASVS Level 2 為目標。
+  - **次數限制：** 註冊、登入、忘記密碼、重設密碼、變更密碼這些要輸入 email 或密碼的端點，每個 IP 連續 10 次，之後每 6 秒補 1 次，超過回 429 和 `Retry-After`（`platform/ratelimit`、`cmd/server/main.go` 的 `newAuthHandler`）。IPv6 以 /64 為單位。預設只看連線本身的位址，不採用 `X-Forwarded-For`（使用者可以自己加這個 header）；放在反向代理後面時，把代理的 IP 或 CIDR 設進 `TRUSTED_PROXIES`，才會從 header 由右往左跳過代理取出使用者 IP。開發環境經過 Vite proxy，所有請求共用同一個額度。計數存在記憶體，重啟後歸零；之後如果跑多台後端，要改用共用的儲存或在反向代理做限制。
+  - **密碼：** 只存 bcrypt 雜湊（cost 12）；舊的雜湊 cost 比較低時，使用者下次登入成功會自動換成 cost 12。規則：8～64 個字元，只能用英文字母、數字、符號（可列印 ASCII，不含空白），大寫、小寫、數字、符號各至少一個。前後端規則一致：`internal/auth/password.go`、`frontend/src/validation/password.ts`，兩邊的測試案例也一致。
+  - **Session：** 存在 `sessions` 表，cookie 只放 128 bits 的隨機 token（`crypto/rand.Text()`），資料庫只存 token 的 SHA-256。cookie 是 HttpOnly、`SameSite=Lax`；`COOKIE_SECURE=true` 時加 Secure，名稱改成 `__Host-nest_egg_session`，子網域無法塞同名 cookie 進來。24 小時沒有需要登入的請求就失效；不論有沒有在用，登入滿 7 天一定失效。`last_seen_at` 最多每分鐘更新一次。登出會刪掉資料庫裡的 session，複製出去的 cookie 也跟著失效。
   - **鎖定：** 同一帳號連續 3 次密碼錯誤，`users.locked` 設成 1，之後登入一律回 423。只能手動解鎖：`UPDATE users SET locked = 0 WHERE email = '...';`。登入成功會把失敗次數歸零。鎖定只擋登入，不會讓已經登入的 session 失效。
-  - **防探測：** 帳號不存在時也跑一次 bcrypt，回應時間和密碼錯誤一樣。刻意接受的取捨：註冊時 email 已存在回 409、帳號鎖定回 423，這兩種情況仍然看得出 email 有註冊。
-  - **忘記密碼：** token 存在 `password_reset_tokens`（只存雜湊），30 分鐘內有效、只能用一次，同一個使用者只保留最新的一個。重設成功後所有裝置登出、失敗次數歸零，但不會解鎖。還沒接 SMTP，見第 10 節待辦。
+  - **變更密碼：** 要輸入目前的密碼，錯誤次數和登入共用同一個鎖定計數。成功後其他裝置全部登出、未使用的重設 token 作廢，目前這台裝置換一個新的 session token。
+  - **防探測：** 帳號不存在時也跑一次 bcrypt，回應時間和密碼錯誤一樣。email 只接受 ASCII，避免用全形等長得很像的字元註冊成另一個帳號。刻意接受的取捨：註冊時 email 已存在回 409、帳號鎖定回 423，這兩種情況仍然看得出 email 有註冊。
+  - **忘記密碼：** token 存在 `password_reset_tokens`（只存雜湊），30 分鐘內有效、只能用一次，同一個使用者只保留最新的一個。前端讀到 token 後會把它從網址列拿掉。重設成功後所有裝置登出、失敗次數歸零，但不會解鎖。還沒接 SMTP，見第 10 節待辦。
+  - **輸入上限：** email 254 字元、密碼 72 bytes、token 64 字元，超過的在查資料庫前就擋掉。
   - **log：** 只記 `user_id`，不記 email、密碼、token。
-  - 放上網路前還要：HTTPS（`COOKIE_SECURE` 維持預設 true）。
+  - 放上網路前還要：HTTPS（`COOKIE_SECURE` 維持預設 true）；有反向代理就設定 `TRUSTED_PROXIES`，並確認代理會在 `X-Forwarded-For` 最後面加上使用者 IP。
 
 ## 10. 待辦
 
@@ -267,3 +271,7 @@ type RateProvider interface {
 
 - 定期清掉過期的 `sessions` 和 `password_reset_tokens`：目前只在該使用者登入時清掉他自己過期的 session，沒有再登入的使用者會留下資料列（已經無法使用，只是占空間）。可以和每天抓匯率的背景 goroutine 一起做。
 - 正式環境用 embed 提供前端頁面時，HTML 要另外設定 CSP（目前的 CSP 是給 JSON API 用的）。
+- 正式環境的資料庫：後端改用只有必要權限的帳號（不要用 `POSTGRES_USER` 那個超級使用者），連線改成 `sslmode=verify-full`。
+- 依賴弱點掃描：Go 用 `govulncheck ./...`（`brew install govulncheck`），前端用 `pnpm audit`，每次升級套件後跑一次。
+- 接上 SMTP 之後再做：註冊時驗證 email、登入新裝置與變更密碼時寄通知信。
+- 「目前登入的裝置」列表，讓使用者看到並個別登出（需要在 `sessions` 多存裝置資訊）。

@@ -66,6 +66,7 @@ type testEnv struct {
 type envOptions struct {
 	cookieSecure bool
 	mailer       auth.Mailer
+	rateLimit    func(http.Handler) http.Handler
 }
 
 func newTestEnv(t *testing.T, opts envOptions) *testEnv {
@@ -80,7 +81,7 @@ func newTestEnv(t *testing.T, opts envOptions) *testEnv {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	h := auth.NewHandler(svc, opts.cookieSecure, log)
+	h := auth.NewHandler(svc, auth.HandlerConfig{CookieSecure: opts.cookieSecure, RateLimit: opts.rateLimit}, log)
 
 	mux := http.NewServeMux()
 	h.Routes(mux)
@@ -190,7 +191,7 @@ func expectBody(t *testing.T, what string, r response, want string) {
 func sessionCookie(t *testing.T, r response) *http.Cookie {
 	t.Helper()
 	for _, c := range r.cookies {
-		if c.Name == "nest_egg_session" {
+		if c.Name == "nest_egg_session" || c.Name == "__Host-nest_egg_session" {
 			return c
 		}
 	}
@@ -222,10 +223,23 @@ func TestRegisterLogsInThenLogout(t *testing.T) {
 	expectStatus(t, "me after logout", e.do(t, c, http.MethodGet, "/api/auth/me", nil), http.StatusUnauthorized)
 }
 
-func TestCookieIsSecureWhenConfigured(t *testing.T) {
+func TestSecureCookieUsesHostPrefix(t *testing.T) {
 	e := newTestEnv(t, envOptions{cookieSecure: true})
-	if ck := sessionCookie(t, e.register(t, e.client(t), "me@example.com")); !ck.Secure {
-		t.Error("cookie Secure = false, want true when cookieSecure is on")
+	ck := sessionCookie(t, e.register(t, e.client(t), "me@example.com"))
+	if !ck.Secure || ck.Name != "__Host-nest_egg_session" || ck.Path != "/" || ck.Domain != "" {
+		t.Fatalf("cookie = %+v, want __Host-nest_egg_session, Secure, Path=/, no Domain", ck)
+	}
+
+	me := func(name string) int {
+		req, _ := http.NewRequest(http.MethodGet, e.srv.URL+"/api/auth/me", nil)
+		req.AddCookie(&http.Cookie{Name: name, Value: ck.Value})
+		return e.send(t, http.DefaultClient, req).status
+	}
+	if got := me("__Host-nest_egg_session"); got != http.StatusOK {
+		t.Errorf("me with __Host- cookie = %d, want 200", got)
+	}
+	if got := me("nest_egg_session"); got != http.StatusUnauthorized {
+		t.Errorf("me with unprefixed cookie = %d, want 401 when cookies are secure", got)
 	}
 }
 
@@ -323,7 +337,7 @@ func TestLoginFailuresLookTheSame(t *testing.T) {
 
 func TestUnknownEmailTakesAsLongAsWrongPassword(t *testing.T) {
 	store := authtest.NewMemStore()
-	svc, err := auth.NewService(store, auth.Config{BcryptCost: bcrypt.DefaultCost}, slog.New(slog.DiscardHandler))
+	svc, err := auth.NewService(store, auth.Config{}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}

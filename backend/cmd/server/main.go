@@ -17,6 +17,7 @@ import (
 	"nest-egg/backend/internal/platform/db"
 	"nest-egg/backend/internal/platform/health"
 	"nest-egg/backend/internal/platform/middleware"
+	"nest-egg/backend/internal/platform/ratelimit"
 )
 
 func main() {
@@ -61,7 +62,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("set up auth: %w", err)
 	}
-	authHandler := auth.NewHandler(authSvc, cfg.CookieSecure, slog.Default())
+	authHandler := newAuthHandler(authSvc, cfg, slog.Default())
 
 	srv := newServer(cfg.HTTPAddr, newHandler(pool, authHandler, cfg.CookieSecure))
 
@@ -87,6 +88,13 @@ func run() error {
 }
 
 const maxBodyBytes = 1 << 20
+
+func newAuthHandler(svc *auth.Service, cfg config.Config, log *slog.Logger) *auth.Handler {
+	return auth.NewHandler(svc, auth.HandlerConfig{
+		CookieSecure: cfg.CookieSecure,
+		RateLimit:    ratelimit.New(10, 6*time.Second, cfg.TrustedProxies).Middleware,
+	}, log)
+}
 
 func newServer(addr string, h http.Handler) *http.Server {
 	return &http.Server{

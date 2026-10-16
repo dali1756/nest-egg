@@ -78,3 +78,29 @@ func TestLoadRejectsInvalidCookieSecure(t *testing.T) {
 		t.Fatal("Load with COOKIE_SECURE = maybe: want error, got nil")
 	}
 }
+
+func TestLoadTrustedProxies(t *testing.T) {
+	setRequired(t)
+	t.Setenv("TRUSTED_PROXIES", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.TrustedProxies) != 0 {
+		t.Errorf("TrustedProxies = %v, want none by default", cfg.TrustedProxies)
+	}
+
+	t.Setenv("TRUSTED_PROXIES", "127.0.0.1,10.0.0.0/8")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.TrustedProxies) != 2 {
+		t.Errorf("TrustedProxies = %v, want 2 entries", cfg.TrustedProxies)
+	}
+
+	t.Setenv("TRUSTED_PROXIES", "localhost")
+	if _, err := Load(); err == nil {
+		t.Error("Load with TRUSTED_PROXIES = localhost: want error, got nil")
+	}
+}
