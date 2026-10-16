@@ -32,20 +32,21 @@
 
 ## 3. 技術選型
 
-| 層        | 選擇                              | 理由                                                                 |
-| --------- | --------------------------------- | -------------------------------------------------------------------- |
-| 後端路由  | 標準函式庫 `net/http`             | Go 1.22+ 支援 `GET /api/x/{id}` 路由                                 |
-| 資料庫    | PostgreSQL + pgx/v5               | `NUMERIC` 精確存金額                                                 |
-| SQL       | sqlc                              | 從 SQL 產生型別安全的 Go 程式碼                                      |
-| Migration | goose                             | 管理資料表版本                                                       |
-| 金額      | `github.com/shopspring/decimal`   | 避免浮點數誤差                                                       |
-| Log       | `log/slog`                        | 標準函式庫結構化 log                                                 |
-| 排程      | goroutine + `time.Ticker`         | 每天抓一次匯率，不需要 cron 套件                                     |
-| 測試      | `testing` + `net/http/httptest`   | 標準函式庫                                                           |
-| 前端建置  | Vite + React + TypeScript（pnpm） | 登入後使用的系統不需要 SEO，SPA 就夠；Next.js 自帶伺服器會和 Go 重疊 |
-| 資料請求  | TanStack Query                    | 快取、loading 與錯誤狀態                                             |
-| 表單      | React Hook Form + Zod             | 表單驗證                                                             |
-| 圖表      | Recharts                          | 每月成本圖、匯率走勢圖                                               |
+| 層        | 選擇                                | 理由                                                                                                                                                                        |
+| --------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 後端路由  | 標準函式庫 `net/http`               | Go 1.22+ 支援 `GET /api/x/{id}` 路由                                                                                                                                        |
+| 資料庫    | PostgreSQL + pgx/v5                 | `NUMERIC` 精確存金額                                                                                                                                                        |
+| SQL       | sqlc                                | 從 SQL 產生型別安全的 Go 程式碼                                                                                                                                             |
+| Migration | goose                               | 管理資料表版本                                                                                                                                                              |
+| 金額      | `github.com/shopspring/decimal`     | 避免浮點數誤差                                                                                                                                                              |
+| Log       | `log/slog`                          | 標準函式庫結構化 log                                                                                                                                                        |
+| 排程      | goroutine + `time.Ticker`           | 每天抓一次匯率，不需要 cron 套件                                                                                                                                            |
+| 測試      | `testing` + `net/http/httptest`     | 標準函式庫                                                                                                                                                                  |
+| 前端建置  | Vite + React + TypeScript（pnpm）   | 登入後使用的系統不需要 SEO，SPA 就夠；Next.js 自帶伺服器會和 Go 重疊                                                                                                        |
+| 樣式      | Tailwind CSS（`@tailwindcss/vite`） | 顏色、圓角、陰影、字級定義在 `src/index.css` 的 `@theme`，元件直接寫 utility class；重複的樣式抽成元件（`Button`、`TextLink`、`Notice`、`PageMessage`），不另外寫 CSS class |
+| 資料請求  | TanStack Query                      | 快取、loading 與錯誤狀態                                                                                                                                                    |
+| 表單      | React Hook Form + Zod               | 表單驗證                                                                                                                                                                    |
+| 圖表      | Recharts                            | 每月成本圖、匯率走勢圖                                                                                                                                                      |
 
 sqlc 與 decimal 的整合：在 `sqlc.yaml` 用 override 把 `pg_catalog.numeric` 對應到 `github.com/shopspring/decimal.Decimal`；pgx 可搭配 `github.com/jackc/pgx-shopspring-decimal` 註冊型別（實作時確認）。
 
@@ -148,26 +149,26 @@ ORDER BY month;
 
 JSON 中的金額與匯率一律用字串。
 
-| 方法與路徑                                                                | 用途                                                                                                               | 階段 |
-| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ---- |
-| `GET /api/health`                                                         | 健康檢查：每次實際 ping 資料庫，連不到回 503；不需登入                                                             | 0    |
-| `POST /api/auth/register`                                                 | 註冊（email、password、confirm_password），成功回 201 `{"email":"..."}` 並直接登入；欄位錯誤 422、email 已存在 409 | 會員 |
-| `POST /api/auth/login`                                                    | 登入，成功回 200 `{"email":"..."}`；帳密錯誤 401、帳號鎖定 423                                                     | 會員 |
-| `POST /api/auth/logout`                                                   | 登出，刪除伺服器端 session，回 204                                                                                 | 會員 |
-| `GET /api/auth/me`                                                        | 目前使用者 `{"email":"..."}`；未登入 401                                                                           | 會員 |
-| `POST /api/auth/password/forgot`                                          | 申請重設密碼（email），不論 email 有沒有註冊都回 202；還沒設定寄信時回 503                                         | 會員 |
-| `POST /api/auth/password/reset`                                           | 重設密碼（token、password、confirm_password），成功回 204；token 無效或過期 400、欄位錯誤 422                      | 會員 |
-| `POST /api/auth/password/change`                                          | 變更密碼（current_password、password、confirm_password），需登入；成功回 204，其他裝置全部登出；目前密碼錯誤 403、帳號鎖定 423、欄位錯誤 422| 會員 |
-| `GET /api/currencies`                                                     | 幣別清單                                                                                                           | 1    |
-| `GET /api/fx-trades`                                                      | 換匯交易列表（可用 `from`、`to` 篩選日期）                                                                         | 1    |
-| `POST /api/fx-trades`                                                     | 新增換匯交易                                                                                                       | 1    |
-| `GET /api/fx-trades/{id}`                                                 | 單筆交易                                                                                                           | 1    |
-| `PUT /api/fx-trades/{id}`                                                 | 修改交易                                                                                                           | 1    |
-| `DELETE /api/fx-trades/{id}`                                              | 刪除交易                                                                                                           | 1    |
-| `GET /api/fx-trades/monthly-cost?buy=USD&pay=TWD`                         | 每月加權平均成本                                                                                                   | 1    |
-| `GET /api/rates/latest?base=USD&quote=TWD`                                | 最新市場匯率                                                                                                       | 2    |
-| `GET /api/rates/history?base=USD&quote=TWD&from=2026-01-01&to=2026-10-31` | 匯率歷史                                                                                                           | 2    |
-| `GET /api/portfolio/summary`                                              | 成本、市值、未實現損益                                                                                             | 2    |
+| 方法與路徑                                                                | 用途                                                                                                                                         | 階段 |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| `GET /api/health`                                                         | 健康檢查：每次實際 ping 資料庫，連不到回 503；不需登入                                                                                       | 0    |
+| `POST /api/auth/register`                                                 | 註冊（email、password、confirm_password），成功回 201 `{"email":"..."}` 並直接登入；欄位錯誤 422、email 已存在 409                           | 會員 |
+| `POST /api/auth/login`                                                    | 登入，成功回 200 `{"email":"..."}`；帳密錯誤 401、帳號鎖定 423                                                                               | 會員 |
+| `POST /api/auth/logout`                                                   | 登出，刪除伺服器端 session，回 204                                                                                                           | 會員 |
+| `GET /api/auth/me`                                                        | 目前使用者 `{"email":"..."}`；未登入 401                                                                                                     | 會員 |
+| `POST /api/auth/password/forgot`                                          | 申請重設密碼（email），不論 email 有沒有註冊都回 202；還沒設定寄信時回 503                                                                   | 會員 |
+| `POST /api/auth/password/reset`                                           | 重設密碼（token、password、confirm_password），成功回 204；token 無效或過期 400、欄位錯誤 422                                                | 會員 |
+| `POST /api/auth/password/change`                                          | 變更密碼（current_password、password、confirm_password），需登入；成功回 204，其他裝置全部登出；目前密碼錯誤 403、帳號鎖定 423、欄位錯誤 422 | 會員 |
+| `GET /api/currencies`                                                     | 幣別清單                                                                                                                                     | 1    |
+| `GET /api/fx-trades`                                                      | 換匯交易列表（可用 `from`、`to` 篩選日期）                                                                                                   | 1    |
+| `POST /api/fx-trades`                                                     | 新增換匯交易                                                                                                                                 | 1    |
+| `GET /api/fx-trades/{id}`                                                 | 單筆交易                                                                                                                                     | 1    |
+| `PUT /api/fx-trades/{id}`                                                 | 修改交易                                                                                                                                     | 1    |
+| `DELETE /api/fx-trades/{id}`                                              | 刪除交易                                                                                                                                     | 1    |
+| `GET /api/fx-trades/monthly-cost?buy=USD&pay=TWD`                         | 每月加權平均成本                                                                                                                             | 1    |
+| `GET /api/rates/latest?base=USD&quote=TWD`                                | 最新市場匯率                                                                                                                                 | 2    |
+| `GET /api/rates/history?base=USD&quote=TWD&from=2026-01-01&to=2026-10-31` | 匯率歷史                                                                                                                                     | 2    |
+| `GET /api/portfolio/summary`                                              | 成本、市值、未實現損益                                                                                                                       | 2    |
 
 `POST /api/fx-trades` 請求範例：
 

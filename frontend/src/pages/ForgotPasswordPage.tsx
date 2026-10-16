@@ -1,11 +1,14 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
-import { Link } from 'react-router'
+import {  } from 'react-router'
 import { z } from 'zod'
 import { ApiError, forgotPassword } from '../api/auth'
 import AuthCard from '../components/AuthCard'
+import Button from '../components/Button'
 import Field from '../components/Field'
+import Notice from '../components/Notice'
+import TextLink from '../components/TextLink'
 
 const schema = z.object({
   email: z.email('請輸入有效的 email'),
@@ -32,15 +35,15 @@ function ForgotPasswordPage() {
   return (
     <AuthCard title="忘記密碼" lead="輸入註冊時的 email，我們會寄出重設密碼的連結。">
       {mutation.isSuccess ? (
-        <p className="form-notice" role="status">
+        <Notice tone="success">
           如果這個 email 有註冊，重設密碼的連結已經寄出，請在 30 分鐘內使用。
-        </p>
+        </Notice>
       ) : (
-        <form className="auth-form" noValidate onSubmit={handleSubmit((values) => mutation.mutate(values))}>
+        <form className="flex flex-col gap-4" noValidate onSubmit={handleSubmit((values) => mutation.mutate(values))}>
           {mutation.isError && (
-            <p className="form-alert" role="alert">
+            <Notice tone="error">
               {errorMessage(mutation.error)}
-            </p>
+            </Notice>
           )}
           <Field
             id="forgot-email"
@@ -50,15 +53,15 @@ function ForgotPasswordPage() {
             error={errors.email?.message}
             {...register('email')}
           />
-          <button type="submit" className="button button-block" disabled={mutation.isPending}>
+          <Button type="submit" block disabled={mutation.isPending}>
             {mutation.isPending ? '送出中…' : '寄出重設連結'}
-          </button>
+          </Button>
         </form>
       )}
-      <p className="auth-switch">
-        <Link className="link" to="/login">
+      <p className="mt-5 text-center text-sm text-muted-foreground">
+        <TextLink to="/login">
           回到登入
-        </Link>
+        </TextLink>
       </p>
     </AuthCard>
   )

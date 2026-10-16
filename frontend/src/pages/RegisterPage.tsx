@@ -1,11 +1,15 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
-import { Link, Navigate } from 'react-router'
+import { Navigate } from 'react-router'
 import { z } from 'zod'
 import { ApiError, register as registerUser } from '../api/auth'
 import AuthCard from '../components/AuthCard'
+import Button from '../components/Button'
 import Field from '../components/Field'
+import Notice from '../components/Notice'
+import PageMessage from '../components/PageMessage'
+import TextLink from '../components/TextLink'
 import { currentUserKey, useCurrentUser } from '../hooks/useCurrentUser'
 import { passwordHint, passwordSchema } from '../validation/password'
 
@@ -41,17 +45,17 @@ function RegisterPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: currentUserKey }),
   })
 
-  if (me.isPending) return <p className="container page-message">載入中…</p>
+  if (me.isPending) return <PageMessage>載入中…</PageMessage>
   if (me.data) return <Navigate to="/" replace />
 
   const { errors } = formState
   return (
     <AuthCard title="註冊" lead="">
-      <form className="auth-form" noValidate onSubmit={handleSubmit((values) => mutation.mutate(values))}>
+      <form className="flex flex-col gap-4" noValidate onSubmit={handleSubmit((values) => mutation.mutate(values))}>
         {mutation.isError && (
-          <p className="form-alert" role="alert">
+          <Notice tone="error">
             {errorMessage(mutation.error)}
-          </p>
+          </Notice>
         )}
         <Field
           id="register-email"
@@ -78,15 +82,15 @@ function RegisterPage() {
           error={errors.confirm_password?.message}
           {...register('confirm_password')}
         />
-        <button type="submit" className="button button-block" disabled={mutation.isPending}>
+        <Button type="submit" block disabled={mutation.isPending}>
           {mutation.isPending ? '註冊中…' : '註冊'}
-        </button>
+        </Button>
       </form>
-      <p className="auth-switch">
+      <p className="mt-5 text-center text-sm text-muted-foreground">
         已經有帳號？
-        <Link className="link" to="/login">
+        <TextLink to="/login">
           登入
-        </Link>
+        </TextLink>
       </p>
     </AuthCard>
   )

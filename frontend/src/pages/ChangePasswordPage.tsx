@@ -4,7 +4,9 @@ import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { ApiError, changePassword } from '../api/auth'
 import AuthCard from '../components/AuthCard'
+import Button from '../components/Button'
 import Field from '../components/Field'
+import Notice from '../components/Notice'
 import { currentUserKey } from '../hooks/useCurrentUser'
 import { passwordHint, passwordSchema } from '../validation/password'
 
@@ -47,16 +49,16 @@ function ChangePasswordPage() {
   const { errors } = formState
   return (
     <AuthCard title="變更密碼" lead="">
-      <form className="auth-form" noValidate onSubmit={handleSubmit((values) => mutation.mutate(values))}>
+      <form className="flex flex-col gap-4" noValidate onSubmit={handleSubmit((values) => mutation.mutate(values))}>
         {mutation.isSuccess && (
-          <p className="form-notice" role="status">
+          <Notice tone="success">
             密碼已變更，其他裝置都已登出。
-          </p>
+          </Notice>
         )}
         {mutation.isError && (
-          <p className="form-alert" role="alert">
+          <Notice tone="error">
             {errorMessage(mutation.error)}
-          </p>
+          </Notice>
         )}
         <Field
           id="change-current-password"
@@ -83,9 +85,9 @@ function ChangePasswordPage() {
           error={errors.confirm_password?.message}
           {...register('confirm_password')}
         />
-        <button type="submit" className="button button-block" disabled={mutation.isPending}>
+        <Button type="submit" block disabled={mutation.isPending}>
           {mutation.isPending ? '變更中...' : '變更密碼'}
-        </button>
+        </Button>
       </form>
     </AuthCard>
   )

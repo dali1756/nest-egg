@@ -2,11 +2,14 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
-import { Link, useLocation, useNavigate } from 'react-router'
+import { useLocation, useNavigate } from 'react-router'
 import { z } from 'zod'
 import { ApiError, resetPassword } from '../api/auth'
 import AuthCard from '../components/AuthCard'
+import Button from '../components/Button'
 import Field from '../components/Field'
+import Notice from '../components/Notice'
+import TextLink from '../components/TextLink'
 import { currentUserKey } from '../hooks/useCurrentUser'
 import { passwordHint, passwordSchema } from '../validation/password'
 
@@ -55,13 +58,13 @@ function ResetPasswordPage() {
   if (!token) {
     return (
       <AuthCard title="重設密碼" lead="">
-        <p className="form-alert" role="alert">
+        <Notice tone="error">
           連結不完整，請重新申請重設密碼。
-        </p>
-        <p className="auth-switch">
-          <Link className="link" to="/forgot-password">
+        </Notice>
+        <p className="mt-5 text-center text-sm text-muted-foreground">
+          <TextLink to="/forgot-password">
             重新申請
-          </Link>
+          </TextLink>
         </p>
       </AuthCard>
     )
@@ -70,13 +73,13 @@ function ResetPasswordPage() {
   if (mutation.isSuccess) {
     return (
       <AuthCard title="重設密碼" lead="">
-        <p className="form-notice" role="status">
+        <Notice tone="success">
           密碼已重設，所有裝置都已登出，請用新密碼登入。
-        </p>
-        <p className="auth-switch">
-          <Link className="link" to="/login">
+        </Notice>
+        <p className="mt-5 text-center text-sm text-muted-foreground">
+          <TextLink to="/login">
             前往登入
-          </Link>
+          </TextLink>
         </p>
       </AuthCard>
     )
@@ -85,11 +88,11 @@ function ResetPasswordPage() {
   const { errors } = formState
   return (
     <AuthCard title="重設密碼" lead="">
-      <form className="auth-form" noValidate onSubmit={handleSubmit((values) => mutation.mutate(values))}>
+      <form className="flex flex-col gap-4" noValidate onSubmit={handleSubmit((values) => mutation.mutate(values))}>
         {mutation.isError && (
-          <p className="form-alert" role="alert">
+          <Notice tone="error">
             {errorMessage(mutation.error)}
-          </p>
+          </Notice>
         )}
         <Field
           id="reset-password"
@@ -108,9 +111,9 @@ function ResetPasswordPage() {
           error={errors.confirm_password?.message}
           {...register('confirm_password')}
         />
-        <button type="submit" className="button button-block" disabled={mutation.isPending}>
+        <Button type="submit" block disabled={mutation.isPending}>
           {mutation.isPending ? '重設中…' : '重設密碼'}
-        </button>
+        </Button>
       </form>
     </AuthCard>
   )

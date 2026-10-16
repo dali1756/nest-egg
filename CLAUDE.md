@@ -7,7 +7,7 @@
 ## 技術選型
 
 - 後端：Go、標準函式庫 `net/http`、PostgreSQL + pgx/v5 + sqlc、goose、`shopspring/decimal`、`log/slog`
-- 前端：Vite + React + TypeScript（pnpm）、React Router、TanStack Query、React Hook Form + Zod、Recharts、shadcn/ui
+- 前端：Vite + React + TypeScript（pnpm）、Tailwind CSS、React Router、TanStack Query、React Hook Form + Zod、Recharts、shadcn/ui
 - 不用 Next.js（會和 Go 後端重疊成兩個後端）；除非真的需要，不引入 ORM、cron、Redis 等額外套件
 
 ## 設計規則
@@ -55,7 +55,9 @@
 - 內文用條列寫改了什麼、為什麼；小改動只寫摘要即可。
 
 ## 打包成 docker 測試資料庫有無連線上
+
 ```bash
 docker-compose up
 ```
+
 輸入網址`http://localhost:5173`預期會看到`後端API`、`資料庫`皆顯示正常。

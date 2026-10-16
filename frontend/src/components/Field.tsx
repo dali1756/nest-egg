@@ -14,25 +14,27 @@ function Field({ id, label, error, hint, ref, ...input }: FieldProps) {
   const describedBy = [errorId, hintId].filter(Boolean).join(' ') || undefined
 
   return (
-    <div className="field">
-      <label className="field-label" htmlFor={id}>
+    <div className="flex flex-col gap-1.5">
+      <label className="text-sm font-semibold text-heading" htmlFor={id}>
         {label}
       </label>
       <input
         id={id}
         ref={ref}
-        className="input"
+        className={`rounded-control border bg-card px-3 py-2.5 text-md text-foreground transition-colors focus-visible:outline-3 focus-visible:outline-offset-1 focus-visible:outline-ring ${
+          error ? 'border-destructive' : 'border-border hover:border-ring focus-visible:border-brand'
+        }`}
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy}
         {...input}
       />
       {error && (
-        <p id={errorId} className="field-error">
+        <p id={errorId} className="text-xs text-destructive-text">
           {error}
         </p>
       )}
       {hint && (
-        <p id={hintId} className="field-hint">
+        <p id={hintId} className="text-xs text-muted-foreground">
           {hint}
         </p>
       )}

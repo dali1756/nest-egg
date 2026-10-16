@@ -2,10 +2,12 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, Outlet, useNavigate } from 'react-router'
 import { logout } from '../api/auth'
 import { currentUserKey, useCurrentUser } from '../hooks/useCurrentUser'
+import Button from './Button'
+import TextLink from './TextLink'
 
 function BrandMark() {
   return (
-    <svg className="brand-mark" width="32" height="32" viewBox="0 0 32 32" aria-hidden="true">
+    <svg className="block flex-none" width="32" height="32" viewBox="0 0 32 32" aria-hidden="true">
       <defs>
         <linearGradient id="brand-gradient" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor="#fb923c" />
@@ -33,19 +35,12 @@ function UserMenu({ email }: { email: string }) {
   })
 
   return (
-    <div className="user-menu">
-      <span className="user-email">{email}</span>
-      <Link className="link" to="/change-password">
-        變更密碼
-      </Link>
-      <button
-        type="button"
-        className="button button-quiet"
-        onClick={() => mutation.mutate()}
-        disabled={mutation.isPending}
-      >
+    <div className="ml-auto flex min-w-0 items-center gap-3">
+      <span className="truncate text-sm text-muted-foreground">{email}</span>
+      <TextLink to="/change-password">變更密碼</TextLink>
+      <Button type="button" variant="quiet" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
         登出
-      </button>
+      </Button>
     </div>
   )
 }
@@ -55,13 +50,18 @@ function AppLayout() {
 
   return (
     <>
-      <header className="site-header">
-        <div className="site-header-inner">
-          <Link to="/" className="brand">
+      <header className="border-b border-border bg-white/85">
+        <div className="flex h-16 items-center gap-2.5 px-6">
+          <Link
+            to="/"
+            className="flex items-center gap-2.5 rounded-lg focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          >
             <BrandMark />
-            <span className="brand-name">nest-egg</span>
+            <span className="text-lg font-bold tracking-[-0.01em] text-heading">nest-egg</span>
           </Link>
-          <span className="brand-tagline">個人資產追蹤</span>
+          <span className="border-l border-border pl-2.5 text-xs text-muted-foreground max-[480px]:hidden">
+            個人資產追蹤
+          </span>
           {user && <UserMenu email={user.email} />}
         </div>
       </header>
