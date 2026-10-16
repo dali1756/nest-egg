@@ -15,6 +15,7 @@ type ForgotValues = z.infer<typeof schema>
 
 function errorMessage(err: Error) {
   if (err instanceof ApiError && err.status === 503) return '忘記密碼功能尚未開放，請聯絡管理員'
+  if (err instanceof ApiError && err.status === 429) return '嘗試次數過多，請稍後再試'
   return '送出失敗，請稍後再試'
 }
 

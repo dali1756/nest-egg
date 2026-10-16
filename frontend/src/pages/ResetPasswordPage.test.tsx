@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, test } from 'vitest'
 import { fakeBackend } from '../test/fakeBackend'
@@ -14,7 +14,10 @@ async function fillReset(password: string, confirm: string) {
 
 test('sends the token from the link and asks the user to log in again', async () => {
   const backend = fakeBackend({ user: null })
-  renderApp('/reset-password#token=ABC234')
+  const { router } = renderApp('/reset-password#token=ABC234')
+
+  await waitFor(() => expect(router.state.location.hash).toBe(''))
+  expect(router.state.location.pathname).toBe('/reset-password')
 
   await fillReset('N3w-password', 'N3w-password')
 
@@ -50,6 +53,7 @@ test('rejects a different confirmation password', async () => {
 test.each([
   [400, '連結無效或已過期，請重新申請'],
   [422, '資料格式不正確'],
+  [429, '嘗試次數過多，請稍後再試'],
   [500, '重設失敗，請稍後再試'],
 ])('shows an error when the server responds %i', async (status, message) => {
   fakeBackend({ user: null, resetStatus: status })

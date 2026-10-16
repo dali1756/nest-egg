@@ -35,6 +35,9 @@ function UserMenu({ email }: { email: string }) {
   return (
     <div className="user-menu">
       <span className="user-email">{email}</span>
+      <Link className="link" to="/change-password">
+        變更密碼
+      </Link>
       <button
         type="button"
         className="button button-quiet"

@@ -25,6 +25,7 @@ type RegisterValues = z.infer<typeof schema>
 function errorMessage(err: Error) {
   if (err instanceof ApiError && err.status === 409) return '這個 email 已經註冊過'
   if (err instanceof ApiError && err.status === 422) return '資料格式不正確'
+  if (err instanceof ApiError && err.status === 429) return '嘗試次數過多，請稍後再試'
   return '註冊失敗，請稍後再試'
 }
 

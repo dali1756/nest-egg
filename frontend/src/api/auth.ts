@@ -3,6 +3,7 @@ export type User = { email: string }
 export type LoginInput = { email: string; password: string }
 export type RegisterInput = { email: string; password: string; confirm_password: string }
 export type ResetPasswordInput = { token: string; password: string; confirm_password: string }
+export type ChangePasswordInput = { current_password: string; password: string; confirm_password: string }
 
 export class ApiError extends Error {
   status: number
@@ -50,4 +51,8 @@ export function forgotPassword(email: string): Promise<void> {
 
 export function resetPassword(input: ResetPasswordInput): Promise<void> {
   return post('/api/auth/password/reset', input)
+}
+
+export function changePassword(input: ChangePasswordInput): Promise<void> {
+  return post('/api/auth/password/change', input)
 }

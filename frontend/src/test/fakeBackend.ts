@@ -10,6 +10,7 @@ type Options = {
   registerStatus?: number
   forgotStatus?: number
   resetStatus?: number
+  changeStatus?: number
 }
 
 function json(status: number, body: unknown) {
@@ -64,6 +65,11 @@ export function fakeBackend(opts: Options = {}) {
         if (status !== 204) return json(status, { error: 'reset failed' })
         state.user = null
         return empty(204)
+      }
+      case 'POST /api/auth/password/change': {
+        const status = opts.changeStatus ?? 204
+        if (status === 401) state.user = null
+        return status === 204 ? empty(204) : json(status, { error: 'change failed' })
       }
     }
     return json(404, { error: 'not found' })

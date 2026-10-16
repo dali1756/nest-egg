@@ -1,7 +1,8 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
-import { Link, useLocation } from 'react-router'
+import { Link, useLocation, useNavigate } from 'react-router'
 import { z } from 'zod'
 import { ApiError, resetPassword } from '../api/auth'
 import AuthCard from '../components/AuthCard'
@@ -28,12 +29,20 @@ function tokenFromHash(hash: string) {
 function errorMessage(err: Error) {
   if (err instanceof ApiError && err.status === 400) return '連結無效或已過期，請重新申請'
   if (err instanceof ApiError && err.status === 422) return '資料格式不正確'
+  if (err instanceof ApiError && err.status === 429) return '嘗試次數過多，請稍後再試'
   return '重設失敗，請稍後再試'
 }
 
 function ResetPasswordPage() {
-  const token = tokenFromHash(useLocation().hash)
+  const location = useLocation()
+  const navigate = useNavigate()
+  const [token] = useState(() => tokenFromHash(location.hash))
   const queryClient = useQueryClient()
+
+  useEffect(() => {
+    if (location.hash) navigate({ hash: '' }, { replace: true })
+  }, [location.hash, navigate])
+
   const { register, handleSubmit, formState } = useForm<ResetValues>({
     resolver: zodResolver(schema),
     defaultValues: { password: '', confirm_password: '' },

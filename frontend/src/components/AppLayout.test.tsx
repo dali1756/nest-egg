@@ -59,3 +59,10 @@ test('clicking the brand mark when logged in stays on the home page', async () =
   expect(router.state.location.pathname).toBe('/')
   expect(await screen.findByRole('heading', { level: 1, name: '系統狀態' })).toBeInTheDocument()
 })
+
+test('links to the change password page when logged in', async () => {
+  fakeBackend({ user: 'me@example.com' })
+  renderApp('/')
+
+  expect(await screen.findByRole('link', { name: '變更密碼' })).toHaveAttribute('href', '/change-password')
+})

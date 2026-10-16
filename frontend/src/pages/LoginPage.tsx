@@ -18,6 +18,7 @@ type LoginValues = z.infer<typeof schema>
 function errorMessage(err: Error) {
   if (err instanceof ApiError && err.status === 401) return 'email 或密碼錯誤'
   if (err instanceof ApiError && err.status === 423) return '帳號已鎖定，請聯絡管理員'
+  if (err instanceof ApiError && err.status === 429) return '嘗試次數過多，請稍後再試'
   return '登入失敗，請稍後再試'
 }
 

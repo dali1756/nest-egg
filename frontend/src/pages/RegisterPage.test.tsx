@@ -67,6 +67,7 @@ test('rejects a different confirmation password', async () => {
 test.each([
   [409, '這個 email 已經註冊過'],
   [422, '資料格式不正確'],
+  [429, '嘗試次數過多，請稍後再試'],
   [500, '註冊失敗，請稍後再試'],
 ])('shows a form error when the server responds %i', async (status, message) => {
   fakeBackend({ user: null, registerStatus: status })

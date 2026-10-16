@@ -87,3 +87,12 @@ test('links to the forgot password page', async () => {
 
   expect(await screen.findByRole('link', { name: '忘記密碼？' })).toHaveAttribute('href', '/forgot-password')
 })
+
+test('asks the user to wait when there are too many attempts', async () => {
+  fakeBackend({ user: null, loginStatus: 429 })
+  renderApp('/login')
+
+  await fillLogin('me@example.com', 'Passw0rd!')
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('嘗試次數過多，請稍後再試')
+})

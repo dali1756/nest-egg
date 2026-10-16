@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest'
-import { ApiError, forgotPassword, getMe, login, logout, register, resetPassword } from './auth'
+import { ApiError, changePassword, forgotPassword, getMe, login, logout, register, resetPassword } from './auth'
 
 function stubFetch(status: number, body?: unknown) {
   const fetchMock = vi.fn(async () =>
@@ -121,5 +121,27 @@ describe('resetPassword', () => {
     await expect(
       resetPassword({ token: 'x', password: 'N3w-password', confirm_password: 'N3w-password' }),
     ).rejects.toMatchObject({ status: 400 })
+  })
+})
+
+describe('changePassword', () => {
+  test('posts the current and new password', async () => {
+    const fetchMock = stubFetch(204)
+    const input = { current_password: 'Passw0rd!', password: 'N3w-password', confirm_password: 'N3w-password' }
+
+    await changePassword(input)
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/auth/password/change', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    })
+  })
+
+  test('throws ApiError 403 for a wrong current password', async () => {
+    stubFetch(403, { error: 'current password is incorrect' })
+    await expect(
+      changePassword({ current_password: 'x', password: 'N3w-password', confirm_password: 'N3w-password' }),
+    ).rejects.toMatchObject({ status: 403 })
   })
 })

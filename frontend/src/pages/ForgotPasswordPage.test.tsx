@@ -23,6 +23,7 @@ test('says the link was sent without revealing whether the email exists', async 
 
 test.each([
   [503, '忘記密碼功能尚未開放，請聯絡管理員'],
+  [429, '嘗試次數過多，請稍後再試'],
   [500, '送出失敗，請稍後再試'],
 ])('shows an error when the server responds %i', async (status, message) => {
   fakeBackend({ user: null, forgotStatus: status })
