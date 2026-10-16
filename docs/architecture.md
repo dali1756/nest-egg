@@ -11,41 +11,41 @@
 
 假設今天 USD/TWD 市場匯率是 31.80：
 
-| | 美金 | 成交匯率 | 付出台幣 |
-|---|---|---|---|
-| 9 月 | 1,000 | 32.10 | 32,100 |
-| 10 月 | 1,000 | 32.42 | 32,420 |
-| **合計** | 2,000 | | **64,520** |
+|          | 美金  | 成交匯率 | 付出台幣   |
+| -------- | ----- | -------- | ---------- |
+| 9 月     | 1,000 | 32.10    | 32,100     |
+| 10 月    | 1,000 | 32.42    | 32,420     |
+| **合計** | 2,000 |          | **64,520** |
 
 - 10 月比 9 月每 1 美元多付 0.32 台幣，約貴 1.0%
 - 目前市值 2,000 × 31.80 = 63,600，未實現損益 **−920 台幣**
 
 ## 2. 名詞
 
-| 名詞 | 意思 | 來源 |
-|---|---|---|
-| 成交匯率 `trade_rate` | 銀行實際換給你的匯率（牌告賣出價） | 使用者從交易明細輸入 |
-| 市場參考匯率 `market_rate` | API 給的中間價 | 系統自動帶入 |
-| 匯差 | 成交匯率和市場匯率的差距，即銀行賺走的部分 | 計算 |
-| 成本 | 換匯時付出的台幣（含手續費），之後固定不變 | 交易紀錄 |
-| 市值 | 持有外幣 × 今日市場匯率，每天變動 | 計算 |
+| 名詞                       | 意思                                       | 來源                 |
+| -------------------------- | ------------------------------------------ | -------------------- |
+| 成交匯率 `trade_rate`      | 銀行實際換給你的匯率（牌告賣出價）         | 使用者從交易明細輸入 |
+| 市場參考匯率 `market_rate` | API 給的中間價                             | 系統自動帶入         |
+| 匯差                       | 成交匯率和市場匯率的差距，即銀行賺走的部分 | 計算                 |
+| 成本                       | 換匯時付出的台幣（含手續費），之後固定不變 | 交易紀錄             |
+| 市值                       | 持有外幣 × 今日市場匯率，每天變動          | 計算                 |
 
 ## 3. 技術選型
 
-| 層 | 選擇 | 理由 |
-|---|---|---|
-| 後端路由 | 標準函式庫 `net/http` | Go 1.22+ 支援 `GET /api/x/{id}` 路由 |
-| 資料庫 | PostgreSQL + pgx/v5 | `NUMERIC` 精確存金額 |
-| SQL | sqlc | 從 SQL 產生型別安全的 Go 程式碼 |
-| Migration | goose | 管理資料表版本 |
-| 金額 | `github.com/shopspring/decimal` | 避免浮點數誤差 |
-| Log | `log/slog` | 標準函式庫結構化 log |
-| 排程 | goroutine + `time.Ticker` | 每天抓一次匯率，不需要 cron 套件 |
-| 測試 | `testing` + `net/http/httptest` | 標準函式庫 |
-| 前端建置 | Vite + React + TypeScript（pnpm） | 登入後使用的系統不需要 SEO，SPA 就夠；Next.js 自帶伺服器會和 Go 重疊 |
-| 資料請求 | TanStack Query | 快取、loading 與錯誤狀態 |
-| 表單 | React Hook Form + Zod | 表單驗證 |
-| 圖表 | Recharts | 每月成本圖、匯率走勢圖 |
+| 層        | 選擇                              | 理由                                                                 |
+| --------- | --------------------------------- | -------------------------------------------------------------------- |
+| 後端路由  | 標準函式庫 `net/http`             | Go 1.22+ 支援 `GET /api/x/{id}` 路由                                 |
+| 資料庫    | PostgreSQL + pgx/v5               | `NUMERIC` 精確存金額                                                 |
+| SQL       | sqlc                              | 從 SQL 產生型別安全的 Go 程式碼                                      |
+| Migration | goose                             | 管理資料表版本                                                       |
+| 金額      | `github.com/shopspring/decimal`   | 避免浮點數誤差                                                       |
+| Log       | `log/slog`                        | 標準函式庫結構化 log                                                 |
+| 排程      | goroutine + `time.Ticker`         | 每天抓一次匯率，不需要 cron 套件                                     |
+| 測試      | `testing` + `net/http/httptest`   | 標準函式庫                                                           |
+| 前端建置  | Vite + React + TypeScript（pnpm） | 登入後使用的系統不需要 SEO，SPA 就夠；Next.js 自帶伺服器會和 Go 重疊 |
+| 資料請求  | TanStack Query                    | 快取、loading 與錯誤狀態                                             |
+| 表單      | React Hook Form + Zod             | 表單驗證                                                             |
+| 圖表      | Recharts                          | 每月成本圖、匯率走勢圖                                               |
 
 sqlc 與 decimal 的整合：在 `sqlc.yaml` 用 override 把 `pg_catalog.numeric` 對應到 `github.com/shopspring/decimal.Decimal`；pgx 可搭配 `github.com/jackc/pgx-shopspring-decimal` 註冊型別（實作時確認）。
 
@@ -56,7 +56,7 @@ nest-egg/
 ├── backend/
 │   ├── cmd/server/main.go     # 程式進入點：讀設定、連 DB、註冊路由、啟動排程
 │   ├── internal/
-│   │   ├── auth/              # 會員：Authboss 設定、users 的 storer、/api/auth/me、RequireUser
+│   │   ├── auth/              # 會員：註冊、登入、session、鎖定、忘記密碼、RequireUser；authtest/ 是測試用的記憶體 Store
 │   │   ├── currency/          # 幣別
 │   │   ├── fx/                # 換匯交易：handler.go / service.go / repository.go
 │   │   ├── rate/              # 匯率：RateProvider interface、排程、rate_snapshots
@@ -71,7 +71,7 @@ nest-egg/
 │   └── go.mod                 # module nest-egg/backend
 ├── frontend/
 │   ├── Dockerfile             # 開發用映像（Vite）
-│   └── src/{api,pages,components,hooks,test}  # routes.tsx 定義路由
+│   └── src/{api,pages,components,hooks,validation,test}  # routes.tsx 定義路由；validation 放和後端共用規則的 Zod schema
 ├── docs/
 │   └── architecture.md
 ├── docker-compose.yml         # 開發環境：db、backend、frontend 一起啟動
@@ -80,7 +80,7 @@ nest-egg/
 └── README.md
 ```
 
-**依功能分 package，不依層分。** 
+**依功能分 package，不依層分。**
 
 `internal/` 是 Go 的特殊目錄：裡面的 package 只能被本 module 內的程式 import。
 
@@ -148,23 +148,25 @@ ORDER BY month;
 
 JSON 中的金額與匯率一律用字串。
 
-| 方法與路徑 | 用途 | 階段 |
-|---|---|---|
-| `GET /api/health` | 健康檢查：每次實際 ping 資料庫，連不到回 503；不需登入 | 0 |
-| `POST /api/auth/register` | 註冊（email、password、confirm_password），成功後直接登入；欄位錯誤 422、email 已存在 409 | 會員 |
-| `POST /api/auth/login` | 登入；帳密錯誤 401 | 會員 |
-| `POST /api/auth/logout` | 登出 | 會員 |
-| `GET /api/auth/me` | 目前使用者 `{"email":"..."}`；未登入 401 | 會員 |
-| `GET /api/currencies` | 幣別清單 | 1 |
-| `GET /api/fx-trades` | 換匯交易列表（可用 `from`、`to` 篩選日期） | 1 |
-| `POST /api/fx-trades` | 新增換匯交易 | 1 |
-| `GET /api/fx-trades/{id}` | 單筆交易 | 1 |
-| `PUT /api/fx-trades/{id}` | 修改交易 | 1 |
-| `DELETE /api/fx-trades/{id}` | 刪除交易 | 1 |
-| `GET /api/fx-trades/monthly-cost?buy=USD&pay=TWD` | 每月加權平均成本 | 1 |
-| `GET /api/rates/latest?base=USD&quote=TWD` | 最新市場匯率 | 2 |
-| `GET /api/rates/history?base=USD&quote=TWD&from=2026-01-01&to=2026-10-31` | 匯率歷史 | 2 |
-| `GET /api/portfolio/summary` | 成本、市值、未實現損益 | 2 |
+| 方法與路徑                                                                | 用途                                                                                                               | 階段 |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ---- |
+| `GET /api/health`                                                         | 健康檢查：每次實際 ping 資料庫，連不到回 503；不需登入                                                             | 0    |
+| `POST /api/auth/register`                                                 | 註冊（email、password、confirm_password），成功回 201 `{"email":"..."}` 並直接登入；欄位錯誤 422、email 已存在 409 | 會員 |
+| `POST /api/auth/login`                                                    | 登入，成功回 200 `{"email":"..."}`；帳密錯誤 401、帳號鎖定 423                                                     | 會員 |
+| `POST /api/auth/logout`                                                   | 登出，刪除伺服器端 session，回 204                                                                                 | 會員 |
+| `GET /api/auth/me`                                                        | 目前使用者 `{"email":"..."}`；未登入 401                                                                           | 會員 |
+| `POST /api/auth/password/forgot`                                          | 申請重設密碼（email），不論 email 有沒有註冊都回 202；還沒設定寄信時回 503                                         | 會員 |
+| `POST /api/auth/password/reset`                                           | 重設密碼（token、password、confirm_password），成功回 204；token 無效或過期 400、欄位錯誤 422                      | 會員 |
+| `GET /api/currencies`                                                     | 幣別清單                                                                                                           | 1    |
+| `GET /api/fx-trades`                                                      | 換匯交易列表（可用 `from`、`to` 篩選日期）                                                                         | 1    |
+| `POST /api/fx-trades`                                                     | 新增換匯交易                                                                                                       | 1    |
+| `GET /api/fx-trades/{id}`                                                 | 單筆交易                                                                                                           | 1    |
+| `PUT /api/fx-trades/{id}`                                                 | 修改交易                                                                                                           | 1    |
+| `DELETE /api/fx-trades/{id}`                                              | 刪除交易                                                                                                           | 1    |
+| `GET /api/fx-trades/monthly-cost?buy=USD&pay=TWD`                         | 每月加權平均成本                                                                                                   | 1    |
+| `GET /api/rates/latest?base=USD&quote=TWD`                                | 最新市場匯率                                                                                                       | 2    |
+| `GET /api/rates/history?base=USD&quote=TWD&from=2026-01-01&to=2026-10-31` | 匯率歷史                                                                                                           | 2    |
+| `GET /api/portfolio/summary`                                              | 成本、市值、未實現損益                                                                                             | 2    |
 
 `POST /api/fx-trades` 請求範例：
 
@@ -183,12 +185,12 @@ JSON 中的金額與匯率一律用字串。
 
 ## 7. 外部資料來源
 
-| 用途 | 來源 | 狀況 |
-|---|---|---|
-| 匯率 | `https://open.er-api.com/v6/latest/USD` | 免 API key、含 TWD、每天更新一次、給的是中間價。免費端點只提供最新值（歷史匯率屬付費方案，實作前確認）。條款：https://www.exchangerate-api.com/terms |
-| 匯率 | 台灣銀行牌告匯率 CSV `https://rate.bot.com.tw/xrt/flcsv/0/day` | 回傳機器人驗證頁，伺服器程式抓不到 |
-| 台股 | `https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL` | 免 key，每日收盤資料。日期是民國格式（`1151006` = 2026-10-06），數值全是字串，要自行轉換 |
-| 美股 | Alpha Vantage、Finnhub 等 | 要申請 API key，免費方案有呼叫次數限制 |
+| 用途 | 來源                                                           | 狀況                                                                                                                                                 |
+| ---- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 匯率 | `https://open.er-api.com/v6/latest/USD`                        | 免 API key、含 TWD、每天更新一次、給的是中間價。免費端點只提供最新值（歷史匯率屬付費方案，實作前確認）。條款：https://www.exchangerate-api.com/terms |
+| 匯率 | 台灣銀行牌告匯率 CSV `https://rate.bot.com.tw/xrt/flcsv/0/day` | 回傳機器人驗證頁，伺服器程式抓不到                                                                                                                   |
+| 台股 | `https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL`  | 免 key，每日收盤資料。日期是民國格式（`1151006` = 2026-10-06），數值全是字串，要自行轉換                                                             |
+| 美股 | Alpha Vantage、Finnhub 等                                      | 要申請 API key，免費方案有呼叫次數限制                                                                                                               |
 
 ### RateProvider
 
@@ -219,13 +221,15 @@ type RateProvider interface {
 
 標 ✅ 的已完成，其餘在第 1 階段開始寫 API 時加進 `internal/platform/`：
 
-| 項目 | 做法 |
-|---|---|
-| 統一錯誤處理 | handler 寫成 `func(w http.ResponseWriter, r *http.Request) error`，由一個轉接函式統一記 log、決定狀態碼（用 `errors.Is` 把「找不到」對應成 404 等），並輸出錯誤 JSON |
-| 錯誤回應 | 前端只收到通用訊息和 request ID，例如 `{"error":"internal error","request_id":"..."}`；內部錯誤細節只留在後端 log |
-| request ID | middleware 為每個請求產生 ID（`crypto/rand.Text()`），放進 context 和 `X-Request-ID` 回應標頭；這個請求的每一行 log 都帶上 `request_id` |
-| access log ✅ | 每個請求記一行：`method`、`path`、`status`、`duration_ms`（`platform/middleware/accesslog.go`）；做好 request ID 後再加上 `request_id` |
-| panic | middleware 用 `recover` 接住，記一筆 ERROR（含 stack trace）並回 500 |
+| 項目           | 做法                                                                                                                                                                                                                                                                          |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 統一錯誤處理   | handler 寫成 `func(w http.ResponseWriter, r *http.Request) error`，由一個轉接函式統一記 log、決定狀態碼（用 `errors.Is` 把「找不到」對應成 404 等），並輸出錯誤 JSON                                                                                                          |
+| 錯誤回應       | 前端只收到通用訊息和 request ID，例如 `{"error":"internal error","request_id":"..."}`；內部錯誤細節只留在後端 log                                                                                                                                                             |
+| request ID     | middleware 為每個請求產生 ID（`crypto/rand.Text()`），放進 context 和 `X-Request-ID` 回應標頭；這個請求的每一行 log 都帶上 `request_id`                                                                                                                                       |
+| access log     | 每個請求記一行：`method`、`path`、`status`、`duration_ms`（`platform/middleware/accesslog.go`）；做好 request ID 後再加上 `request_id`                                                                                                                                        |
+| panic          | middleware 用 `recover` 接住，記一筆 ERROR（含 stack trace）並回 500                                                                                                                                                                                                          |
+| 請求大小與逾時 | `http.MaxBytesHandler` 限制 body 1 MB；`http.Server` 設 `ReadHeaderTimeout`、`ReadTimeout`、`WriteTimeout`、`IdleTimeout`（`cmd/server/main.go`）                                                                                                                             |
+| 安全性 header  | 每個回應都帶 CSP（`default-src 'none'`）、`X-Frame-Options: DENY`、`nosniff`、`Referrer-Policy: no-referrer`、`Cache-Control: no-store`；`COOKIE_SECURE=true`（HTTPS）時加 HSTS（`platform/middleware/securityheaders.go`）。之後用 embed 提供前端頁面時，HTML 要另外設定 CSP |
 
 ### 寫法規則
 
@@ -239,6 +243,27 @@ type RateProvider interface {
 
 - **開發：** `docker-compose up` 一次啟動 PostgreSQL（本機 `localhost:5433`，TZ=Asia/Taipei）、Go 後端（`localhost:8080`，air 熱重載）與 Vite 開發伺服器（`localhost:5173`）；Vite 用 proxy 把 `/api` 轉到後端，不用處理 CORS。啟動與驗證步驟見 README。
 - **正式環境：** 可用 `embed` 把前端 build 出來的檔案包進 Go 執行檔，只部署一個檔案。
-- **登入：** 用 Authboss（`github.com/aarondl/authboss/v3`）的 auth、register、logout 模組，回應一律 JSON。密碼只存 bcrypt 雜湊；session 存在加密、簽章的 HttpOnly cookie（`SameSite=Lax`、7 天，金鑰由 `SESSION_SECRET` 以 HKDF 推導）；跨站的 POST/PUT/PATCH/DELETE 由 `http.CrossOriginProtection` 擋下。之後的業務 API 套 `auth.RequireUser` 要求登入。
-  - 外層 middleware 若包裝 `ResponseWriter`，必須實作 `UnderlyingResponseWriter()`，否則 Authboss 寫 session 時會 panic。
-  - 放上網路前還要：HTTPS（`COOKIE_SECURE` 維持預設 true）、登入次數限制（rate limit 或 Authboss 的 lock 模組）；若需要「登出所有裝置」，改成伺服器端 session。
+- **登入：** 自己實作在 `internal/auth`，不用第三方會員套件，回應一律 JSON。跨站的 POST/PUT/PATCH/DELETE 由 `http.CrossOriginProtection` 擋下。之後的業務 API 套 `RequireUser` 要求登入，handler 用 `auth.CurrentUser(ctx)` 取得使用者。
+  - **密碼：** 只存 bcrypt 雜湊（cost 10）。規則：8～64 個字元，只能用英文字母、數字、符號（可列印 ASCII，不含空白），大寫、小寫、數字、符號各至少一個。前後端規則一致：`internal/auth/password.go`、`frontend/src/validation/password.ts`，兩邊的測試案例也一致。
+  - **Session：** 存在 `sessions` 表，cookie 只放 128 bits 的隨機 token（`crypto/rand.Text()`），資料庫只存 token 的 SHA-256。cookie 是 HttpOnly、`SameSite=Lax`，`COOKIE_SECURE=true` 時加 Secure。24 小時沒有需要登入的請求就失效；不論有沒有在用，登入滿 7 天一定失效。`last_seen_at` 最多每分鐘更新一次。登出會刪掉資料庫裡的 session，複製出去的 cookie 也跟著失效。
+  - **鎖定：** 同一帳號連續 3 次密碼錯誤，`users.locked` 設成 1，之後登入一律回 423。只能手動解鎖：`UPDATE users SET locked = 0 WHERE email = '...';`。登入成功會把失敗次數歸零。鎖定只擋登入，不會讓已經登入的 session 失效。
+  - **防探測：** 帳號不存在時也跑一次 bcrypt，回應時間和密碼錯誤一樣。刻意接受的取捨：註冊時 email 已存在回 409、帳號鎖定回 423，這兩種情況仍然看得出 email 有註冊。
+  - **忘記密碼：** token 存在 `password_reset_tokens`（只存雜湊），30 分鐘內有效、只能用一次，同一個使用者只保留最新的一個。重設成功後所有裝置登出、失敗次數歸零，但不會解鎖。還沒接 SMTP，見第 10 節待辦。
+  - **log：** 只記 `user_id`，不記 email、密碼、token。
+  - 放上網路前還要：HTTPS（`COOKIE_SECURE` 維持預設 true）。
+
+## 10. 待辦
+
+### SMTP：忘記密碼寄信
+
+目前 `auth.Config.Mailer` 是 nil，`POST /api/auth/password/forgot` 回 503，前端顯示「尚未開放」。接上時要做：
+
+- 實作 `auth.Mailer`（SMTP 或寄信服務的 API），主機、帳密、寄件人放環境變數，帳密不進 log。
+- 信裡的連結用 `{APP_BASE_URL}/reset-password#token=<token>`，要新增 `APP_BASE_URL` 設定。token 放在 `#` 後面，瀏覽器不會把它送到伺服器，所以不會出現在 Referer 或 access log。前端的重設頁面已經照這個格式讀 token。
+- 寄信改成背景執行：現在是同步寄，「有寄信」和「沒寄信」的回應時間不同，可以用來判斷 email 有沒有註冊；SMTP 出錯時也會回 500。
+- 加上申請次數限制（同一個 email、同一個 IP），避免被拿來大量寄信騷擾別人。
+
+### 其他
+
+- 定期清掉過期的 `sessions` 和 `password_reset_tokens`：目前只在該使用者登入時清掉他自己過期的 session，沒有再登入的使用者會留下資料列（已經無法使用，只是占空間）。可以和每天抓匯率的背景 goroutine 一起做。
+- 正式環境用 embed 提供前端頁面時，HTML 要另外設定 CSP（目前的 CSP 是給 JSON API 用的）。

@@ -57,16 +57,13 @@ func run() error {
 		return fmt.Errorf("migrate database: %w", err)
 	}
 
-	a, err := auth.New(auth.Config{SessionSecret: cfg.SessionSecret, CookieSecure: cfg.CookieSecure}, auth.NewRepository(pool), slog.Default())
+	authSvc, err := auth.NewService(auth.NewRepository(pool), auth.Config{}, slog.Default())
 	if err != nil {
 		return fmt.Errorf("set up auth: %w", err)
 	}
+	authHandler := auth.NewHandler(authSvc, cfg.CookieSecure, slog.Default())
 
-	srv := &http.Server{
-		Addr:              cfg.HTTPAddr,
-		Handler:           newHandler(pool, a),
-		ReadHeaderTimeout: 5 * time.Second,
-	}
+	srv := newServer(cfg.HTTPAddr, newHandler(pool, authHandler, cfg.CookieSecure))
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -89,9 +86,26 @@ func run() error {
 	return nil
 }
 
-func newHandler(pinger health.Pinger, a *auth.Auth) http.Handler {
+const maxBodyBytes = 1 << 20
+
+func newServer(addr string, h http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           h,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+}
+
+func newHandler(pinger health.Pinger, authHandler *auth.Handler, hsts bool) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", health.NewHandler(pinger).Get)
-	a.Routes(mux)
-	return middleware.AccessLog(http.NewCrossOriginProtection().Handler(a.Middleware(mux)))
+	authHandler.Routes(mux)
+
+	var h http.Handler = http.MaxBytesHandler(mux, maxBodyBytes)
+	h = http.NewCrossOriginProtection().Handler(h)
+	h = middleware.SecurityHeaders(h, hsts)
+	return middleware.AccessLog(h)
 }

@@ -5,13 +5,33 @@
 package dbgen
 
 import (
-	"github.com/jackc/pgx/v5/pgtype"
+	"time"
 )
 
+type PasswordResetToken struct {
+	ID        int64
+	TokenHash []byte
+	UserID    int64
+	CreatedAt time.Time
+	ExpiresAt time.Time
+}
+
+type Session struct {
+	ID         int64
+	TokenHash  []byte
+	UserID     int64
+	CreatedAt  time.Time
+	LastSeenAt time.Time
+	ExpiresAt  time.Time
+}
+
 type User struct {
-	ID           int64
-	Email        string
-	PasswordHash string
-	CreatedAt    pgtype.Timestamptz
-	UpdatedAt    pgtype.Timestamptz
+	ID               int64
+	Email            string
+	PasswordHash     string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	FailedLoginCount int16
+	// 0 未封鎖、1 封鎖。連續登入失敗 3 次會設成 1，只能手動改回 0 解鎖
+	Locked int16
 }

@@ -9,6 +9,17 @@ import (
 	"context"
 )
 
+const clearLoginFailures = `-- name: ClearLoginFailures :exec
+UPDATE users
+SET failed_login_count = 0
+WHERE id = $1
+`
+
+func (q *Queries) ClearLoginFailures(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, clearLoginFailures, id)
+	return err
+}
+
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (email, password_hash)
 VALUES ($1, $2)
@@ -46,22 +57,63 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEm
 	return i, err
 }
 
-const updateUserPassword = `-- name: UpdateUserPassword :execrows
+const lockIfFailuresExhausted = `-- name: LockIfFailuresExhausted :execrows
 UPDATE users
-SET password_hash = $2,
-    updated_at    = now()
-WHERE email = $1
+SET locked             = 1,
+    failed_login_count = 0,
+    updated_at         = now()
+WHERE id = $1
+  AND failed_login_count >= $2
 `
 
-type UpdateUserPasswordParams struct {
-	Email        string
-	PasswordHash string
+type LockIfFailuresExhaustedParams struct {
+	ID          int64
+	MaxFailures int16
 }
 
-func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (int64, error) {
-	result, err := q.db.Exec(ctx, updateUserPassword, arg.Email, arg.PasswordHash)
+func (q *Queries) LockIfFailuresExhausted(ctx context.Context, arg LockIfFailuresExhaustedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, lockIfFailuresExhausted, arg.ID, arg.MaxFailures)
 	if err != nil {
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const reserveLoginAttempt = `-- name: ReserveLoginAttempt :execrows
+UPDATE users
+SET failed_login_count = failed_login_count + 1
+WHERE id = $1
+  AND locked = 0
+  AND failed_login_count < $2
+`
+
+type ReserveLoginAttemptParams struct {
+	ID          int64
+	MaxFailures int16
+}
+
+func (q *Queries) ReserveLoginAttempt(ctx context.Context, arg ReserveLoginAttemptParams) (int64, error) {
+	result, err := q.db.Exec(ctx, reserveLoginAttempt, arg.ID, arg.MaxFailures)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const updatePasswordHash = `-- name: UpdatePasswordHash :exec
+UPDATE users
+SET password_hash      = $2,
+    failed_login_count = 0,
+    updated_at         = now()
+WHERE id = $1
+`
+
+type UpdatePasswordHashParams struct {
+	ID           int64
+	PasswordHash string
+}
+
+func (q *Queries) UpdatePasswordHash(ctx context.Context, arg UpdatePasswordHashParams) error {
+	_, err := q.db.Exec(ctx, updatePasswordHash, arg.ID, arg.PasswordHash)
+	return err
 }

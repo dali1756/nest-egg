@@ -1,18 +1,13 @@
 package config
 
 import (
-	"bytes"
 	"log/slog"
-	"strings"
 	"testing"
 )
-
-const validSecret = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
 
 func setRequired(t *testing.T) {
 	t.Helper()
 	t.Setenv("DATABASE_URL", "postgres://example")
-	t.Setenv("SESSION_SECRET", validSecret)
 }
 
 func TestLoadDefaults(t *testing.T) {
@@ -54,44 +49,6 @@ func TestLoadRejectsInvalidLogFormat(t *testing.T) {
 
 	if _, err := Load(); err == nil {
 		t.Fatal("Load with LOG_FORMAT = xml: want error, got nil")
-	}
-}
-
-func TestLoadDecodesSessionSecret(t *testing.T) {
-	setRequired(t)
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	want := make([]byte, 32)
-	for i := range want {
-		want[i] = byte(i)
-	}
-	if !bytes.Equal(cfg.SessionSecret, want) {
-		t.Errorf("SessionSecret = %x, want %x", cfg.SessionSecret, want)
-	}
-}
-
-func TestLoadRejectsInvalidSessionSecret(t *testing.T) {
-	tests := map[string]string{
-		"missing":  "",
-		"not hex":  "zz" + validSecret[2:],
-		"31 bytes": validSecret[:62],
-	}
-	for name, secret := range tests {
-		t.Run(name, func(t *testing.T) {
-			setRequired(t)
-			t.Setenv("SESSION_SECRET", secret)
-
-			_, err := Load()
-			if err == nil {
-				t.Fatal("want error, got nil")
-			}
-			if secret != "" && strings.Contains(err.Error(), secret) {
-				t.Errorf("error leaks SESSION_SECRET: %v", err)
-			}
-		})
 	}
 }
 

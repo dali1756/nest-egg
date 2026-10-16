@@ -4,15 +4,11 @@
 
 ## 啟動開發環境
 
-只需要 Docker Desktop。第一次使用先建立 `.env`，填入資料庫密碼與 session 金鑰：
+只需要 Docker Desktop。第一次使用先建立 `.env`，填入資料庫密碼：
 
 ```bash
 cp .env.example .env
-# SESSION_SECRET 可用下面的指令產生
-openssl rand -hex 32
 ```
-
-`SESSION_SECRET` 是登入 cookie 的加密金鑰，沒填的話 `docker-compose up` 會直接報錯，如有多台電腦開發可以各自產生，換金鑰只會讓已登入的 session 失效。
 
 之後每次只要：
 
@@ -53,9 +49,15 @@ bash .claude/skills/nest-egg-verify/scripts/verify-stack.sh
 ## 會員與登入
 
 - 第一次使用先到 http://localhost:5173/register 建立帳號（email + 密碼），註冊後直接登入。
-- 密碼至少 8 個字元，並包含大寫、小寫英文字母、數字與符號；資料庫只存 bcrypt 雜湊。
+- 密碼 8～64 個字元，只能用英文字母、數字與符號（不可有空白），大寫、小寫、數字、符號各至少一個；資料庫只存 bcrypt 雜湊。
 - 登入後的首頁暫時是「系統狀態」頁，之後會換成正式首頁。
-- 後端用 [Authboss](https://github.com/aarondl/authboss)（`github.com/aarondl/authboss/v3`）處理註冊、登入、登出，session 存在加密的 HttpOnly cookie（7 天）。API：`POST /api/auth/register`、`POST /api/auth/login`、`POST /api/auth/logout`、`GET /api/auth/me`。`/api/health` 不需要登入。
+- 24 小時沒有操作會自動登出；不論有沒有在用，登入滿 7 天要重新登入。
+- 同一帳號連續輸錯 3 次密碼會被封鎖，只能到資料庫解鎖：
+  ```bash
+  docker-compose exec db psql -U admin -d nest_egg -c "UPDATE users SET locked = 0 WHERE email = 'me@example.com';"
+  ```
+- 「忘記密碼」要等接上 SMTP 才開放，目前畫面會顯示尚未開放（見 [docs/architecture.md](docs/architecture.md) 第 10 節）。
+- 會員功能是自己實作的（`backend/internal/auth`），設計見 [docs/architecture.md](docs/architecture.md) 第 9 節。API：`POST /api/auth/register`、`POST /api/auth/login`、`POST /api/auth/logout`、`GET /api/auth/me`、`POST /api/auth/password/forgot`、`POST /api/auth/password/reset`。`/api/health` 不需要登入。
 - 跨站的 POST 會被擋下（回 403，Go 內建的 `http.CrossOriginProtection`）。
 
 ## 資料庫 migration 與 sqlc

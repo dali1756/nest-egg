@@ -1,92 +1,50 @@
-package auth
+package auth_test
 
 import (
-	"errors"
 	"testing"
 
-	"github.com/aarondl/authboss/v3"
-
+	"nest-egg/backend/internal/auth"
+	"nest-egg/backend/internal/auth/authtest"
 	"nest-egg/backend/internal/platform/db/dbtest"
 )
 
-var _ authboss.CreatingServerStorer = (*Repository)(nil)
-
-func newTestRepository(t *testing.T) *Repository {
-	t.Helper()
-	return NewRepository(dbtest.Migrated(t))
+func TestRepositoryContract(t *testing.T) {
+	authtest.RunStoreContract(t, func(t *testing.T) auth.Store {
+		return auth.NewRepository(dbtest.Migrated(t))
+	})
 }
 
-func createUser(t *testing.T, repo *Repository, email, hash string) {
-	t.Helper()
-	u := repo.New(t.Context())
-	u.(*User).PutPID(email)
-	u.(*User).PutPassword(hash)
-	if err := repo.Create(t.Context(), u); err != nil {
-		t.Fatalf("Create(%s): %v", email, err)
-	}
-}
-
-func TestRepositoryLoadMissingUser(t *testing.T) {
-	repo := newTestRepository(t)
-
-	_, err := repo.Load(t.Context(), "nobody@example.com")
-	if !errors.Is(err, authboss.ErrUserNotFound) {
-		t.Fatalf("Load error = %v, want authboss.ErrUserNotFound", err)
-	}
-}
-
-func TestRepositoryCreateThenLoadIgnoresCase(t *testing.T) {
-	repo := newTestRepository(t)
-	createUser(t, repo, "me@example.com", "$2a$10$hash")
-
-	got, err := repo.Load(t.Context(), "  ME@Example.com ")
+func TestRepositoryUnlockBySettingLockedToZero(t *testing.T) {
+	pool := dbtest.Migrated(t)
+	repo := auth.NewRepository(pool)
+	ctx := t.Context()
+	id, err := repo.CreateUser(ctx, "me@example.com", "hash")
 	if err != nil {
-		t.Fatalf("Load: %v", err)
+		t.Fatalf("CreateUser: %v", err)
 	}
-	u := got.(*User)
-	if u.ID == 0 || u.Email != "me@example.com" || u.Password != "$2a$10$hash" {
-		t.Errorf("Load = %+v, want ID>0, email me@example.com, password $2a$10$hash", u)
+	for range 3 {
+		if _, err := repo.ReserveLoginAttempt(ctx, id, 3); err != nil {
+			t.Fatalf("ReserveLoginAttempt: %v", err)
+		}
 	}
-}
+	if locked, err := repo.LockIfFailuresExhausted(ctx, id, 3); err != nil || !locked {
+		t.Fatalf("LockIfFailuresExhausted = %v, %v; want true, nil", locked, err)
+	}
 
-func TestRepositoryCreateDuplicate(t *testing.T) {
-	repo := newTestRepository(t)
-	createUser(t, repo, "me@example.com", "h1")
-
-	u := repo.New(t.Context())
-	u.(*User).PutPID("ME@example.com")
-	u.(*User).PutPassword("h2")
-	if err := repo.Create(t.Context(), u); !errors.Is(err, authboss.ErrUserFound) {
-		t.Fatalf("Create duplicate error = %v, want authboss.ErrUserFound", err)
+	var locked, failed int
+	if err := pool.QueryRow(ctx, `SELECT locked, failed_login_count FROM users WHERE id = $1`, id).Scan(&locked, &failed); err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestRepositorySaveUpdatesPassword(t *testing.T) {
-	repo := newTestRepository(t)
-	createUser(t, repo, "me@example.com", "old")
-
-	u, err := repo.Load(t.Context(), "me@example.com")
-	if err != nil {
-		t.Fatalf("Load: %v", err)
+	if locked != 1 || failed != 0 {
+		t.Fatalf("after lock: locked = %d, failed_login_count = %d; want 1, 0", locked, failed)
 	}
-	u.(*User).PutPassword("new")
-	if err := repo.Save(t.Context(), u); err != nil {
-		t.Fatalf("Save: %v", err)
-	}
-	got, err := repo.Load(t.Context(), "me@example.com")
-	if err != nil {
-		t.Fatalf("Load after Save: %v", err)
-	}
-	if pw := got.(*User).Password; pw != "new" {
-		t.Errorf("password after Save = %q, want %q", pw, "new")
-	}
-}
 
-func TestRepositorySaveMissingUser(t *testing.T) {
-	repo := newTestRepository(t)
-
-	err := repo.Save(t.Context(), &User{Email: "nobody@example.com", Password: "x"})
-	if !errors.Is(err, authboss.ErrUserNotFound) {
-		t.Fatalf("Save error = %v, want authboss.ErrUserNotFound", err)
+	if _, err := pool.Exec(ctx, `UPDATE users SET locked = 0 WHERE email = 'me@example.com'`); err != nil {
+		t.Fatalf("manual unlock: %v", err)
+	}
+	for i := 1; i <= 3; i++ {
+		if ok, err := repo.ReserveLoginAttempt(ctx, id, 3); err != nil || !ok {
+			t.Fatalf("attempt %d after manual unlock = %v, %v; want true, nil", i, ok, err)
+		}
 	}
 }

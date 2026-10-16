@@ -1,47 +1,60 @@
 package auth
 
 import (
-	"net/http"
 	"strings"
 	"testing"
-
-	"golang.org/x/crypto/bcrypt"
 )
 
-func TestPasswordIsStoredAsBcryptHashOnly(t *testing.T) {
-	e := newTestEnv(t)
-	c := e.client(t)
-
-	responses := []response{
-		e.register(t, c, "me@example.com"),
-		e.do(t, c, http.MethodGet, "/api/auth/me", nil),
-		e.do(t, c, http.MethodPost, "/api/auth/logout", nil),
-		e.do(t, c, http.MethodPost, "/api/auth/login", loginBody("me@example.com", "Wr0ngpass!")),
-		e.do(t, c, http.MethodPost, "/api/auth/login", loginBody("me@example.com", goodPassword)),
+func TestValidatePassword(t *testing.T) {
+	valid := []string{
+		"Passw0rd!",
+		"Aa1!aaaa",
+		"Aa1" + strings.Repeat("~", 61),
+		"Aa1`{}|\\\"'",
 	}
-
-	u, ok := e.storer.get("me@example.com")
-	if !ok {
-		t.Fatal("user not stored")
-	}
-	if u.Password == goodPassword || !strings.HasPrefix(u.Password, "$2") {
-		t.Fatalf("stored password = %q, want a bcrypt hash", u.Password)
-	}
-	if err := bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(goodPassword)); err != nil {
-		t.Errorf("stored hash does not match the password: %v", err)
-	}
-
-	secrets := []string{goodPassword, "Wr0ngpass!", u.Password}
-	for i, r := range responses {
-		for _, s := range secrets {
-			if strings.Contains(r.body, s) {
-				t.Errorf("response %d contains secret %q: %s", i, s, r.body)
-			}
+	for _, p := range valid {
+		if err := validatePassword(p); err != nil {
+			t.Errorf("validatePassword(%q) = %v, want nil", p, err)
 		}
 	}
-	for _, s := range secrets {
-		if strings.Contains(e.logs.String(), s) {
-			t.Errorf("logs contain secret %q", s)
+
+	invalid := map[string]string{
+		"":                               "at least 8",
+		"Pa0rd!":                         "at least 8",
+		"Aa1!" + strings.Repeat("a", 61): "at most 64",
+		"Passw0rd":                       "symbol",
+		"passw0rd!":                      "uppercase",
+		"PASSW0RD!":                      "lowercase",
+		"Password!":                      "digit",
+		"Pass w0rd!":                     "without spaces",
+		"Passw0rd!\t":                    "without spaces",
+		"Pässw0rd!":                      "without spaces",
+		"密碼Passw0rd!":                    "without spaces",
+	}
+	for p, want := range invalid {
+		err := validatePassword(p)
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("validatePassword(%q) = %v, want error containing %q", p, err, want)
 		}
+	}
+}
+
+func TestPasswordHasher(t *testing.T) {
+	h, err := newPasswordHasher(4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash, err := h.hash("Passw0rd!")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hash == "Passw0rd!" || !strings.HasPrefix(hash, "$2") {
+		t.Fatalf("hash = %q, want a bcrypt hash", hash)
+	}
+	if !h.matches(hash, "Passw0rd!") {
+		t.Error("matches(correct password) = false")
+	}
+	if h.matches(hash, "Passw0rd?") {
+		t.Error("matches(wrong password) = true")
 	}
 }

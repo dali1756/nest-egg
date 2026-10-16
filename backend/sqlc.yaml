@@ -10,3 +10,6 @@ sql:
         out: internal/platform/db/dbgen
         sql_package: pgx/v5
         emit_interface: false
+        overrides:
+          - db_type: timestamptz
+            go_type: time.Time
