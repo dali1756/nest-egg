@@ -40,6 +40,19 @@
   ```
 - 新寫的測試要確認抓得到 bug：暫時改壞被測的那一行，測試應該失敗，確認後改回來。
 
+## 開發流程
+
+規格用 OpenSpec（`openspec/` 不進版控），開發紀律用 superpowers。兩者重疊的地方以這裡為準：
+
+1. 釐清需求用 `superpowers:brainstorming`。小改動在對話中確認；需要寫成文件時用 `/opsx:propose` 建立 OpenSpec change，不寫 `docs/superpowers/specs/`。
+2. change 的 `tasks.md` 就是實作計畫，不另外用 `superpowers:writing-plans` 產生 `docs/superpowers/plans/`。
+3. `/opsx:apply` 逐項實作，每項照 `superpowers:test-driven-development` 先寫失敗測試；遇到 bug 或非預期的測試結果用 `superpowers:systematic-debugging`。
+4. 宣告完成前：需要時先跑 `nest-egg-money-review`，再照 `superpowers:verification-before-completion` 執行「檢查指令」並貼出結果，最後 `/opsx:verify`。
+5. 使用者 commit 後，用 `/opsx:archive` 歸檔 change。
+
+- 除非使用者明確要求，Claude 不 commit、push、建分支或開 worktree。流程走到 commit 步驟時，依「Commit 慣例」列出建議的 commit 訊息後停下。
+- 不開 worktree 的原因：`docker-compose.yml` 掛載的是主目錄的 `./backend`、`./frontend`，worktree 裡的修改 air 和 Vite 都看不到，`/nest-egg-verify` 也測不到。
+
 ## 開發用 skill
 
 - 改了金額、匯率、日期、幣別或 log 相關的程式碼後，在 commit 或 `/opsx:verify` 之前，用 `nest-egg-money-review` 檢查設計規則。
