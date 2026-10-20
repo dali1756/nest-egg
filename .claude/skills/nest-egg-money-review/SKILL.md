@@ -1,6 +1,6 @@
 ---
 name: nest-egg-money-review
-description: Use when nest-egg code that touches money amounts, exchange rates, dates or time zones, currencies, or logging has been written or changed, before committing or running /opsx:verify, or when asked to review code against the project's design rules (檢查設計規則、金額、匯率、時區、幣別、review).
+description: Use when nest-egg code that touches money amounts, exchange rates, dates or time zones, currencies, logging, or user-owned data (handlers, services, repositories or SQL that read or write a user's records) has been written or changed, before committing or running /opsx:verify, or when asked to review code against the project's design rules (檢查設計規則、金額、匯率、時區、幣別、使用者資料、user_id、review).
 ---
 
 # nest-egg money review
@@ -15,7 +15,7 @@ CLAUDE.md 的設計規則有兩種檢查：`check-rules.sh` 抓單行就看得�
    ```
 2. 逐一處理每個違規：
    - 真的問題 --> 依下方「修正方向」修改程式碼。
-   - 誤報（例如路由 id 的 `Number(params.id)`）--> 在同一行加 `money-rules:allow <rule-id>: 原因`。原因必寫，一個註解只豁免一條規則。
+   - 誤報（例如路徑 id 的 `Number(params.id)`）--> 在同一行加 `money-rules:allow <rule-id>: 原因`。原因必寫，一個註解只豁免一條規則。
    - 無法判斷 --> 問使用者，不要自己加例外。
 3. 讀 `references/judgement.md`，對本次變更的檔案（`git status`、`git diff`）逐項檢查。
 4. 重跑 script，確認回傳 0。
@@ -33,6 +33,7 @@ CLAUDE.md 的設計規則有兩種檢查：`check-rules.sh` 抓單行就看得�
 | `currency-list` | 查 `currencies` 表，或用外鍵 |
 | `secret-log` | 只記 ID 與非機密欄位 |
 | `frontend-external-api` | 改成呼叫自己的 `/api`，由後端的 `RateProvider` 取資料 |
+| `user-id-from-request` | 用 `auth.CurrentUser(r.Context())` 取得使用者，把 `user.ID` 傳給 service；請求與回應的 struct 拿掉 `user_id` |
 
 ## 回報格式
 

@@ -180,9 +180,9 @@ test_smoke_auth_me() {
   BACKEND_URL=http://127.0.0.1:18080 bash "$here/smoke/auth-me.sh" >/dev/null 2>"$tmp/stderr"
   code=$?
   if [ "$code" -ne 0 ]; then
-    pass "smoke/auth-me.sh：路由不存在（404）時回非 0"
+    pass "smoke/auth-me.sh：路徑不存在（404）時回非 0"
   else
-    fail "smoke/auth-me.sh 路由不存在：預期非 0，實際 code=${code}"
+    fail "smoke/auth-me.sh 路徑不存在：預期非 0，實際 code=${code}"
   fi
 }
 

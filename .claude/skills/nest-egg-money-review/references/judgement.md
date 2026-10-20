@@ -25,7 +25,7 @@
 ## 4. 小數位數
 
 - 金額欄位 `NUMERIC(20,4)`、匯率 `NUMERIC(20,8)`。PostgreSQL 寫入超過位數的值會無聲四捨五入，不會報錯。
-- API 收到超過位數的金額要回 400，不可默默截斷。
+- API 收到超過位數的金額要回傳 `apperr.ValidationError`（422，標出是哪個欄位），不可默默截斷。
 - 計算過程不先四捨五入，只在輸出顯示用的字串時才處理位數。
 
 ## 5. 日期以台北時間計算（規則 4）
@@ -53,5 +53,16 @@
 
 ## 9. 幣別是資料（規則 5）
 
-- 檢查幣別是否存在要查 `currencies` 表（外鍵錯誤轉成 400），不在程式碼裡比對清單。
+- 檢查幣別是否存在要查 `currencies` 表（外鍵錯誤轉成 `apperr.ValidationError`，回 422），不在程式碼裡比對清單。
 - 唯一可以寫死的是本位幣 `TWD`（v1 每筆換匯有一邊必須是 TWD）。
+
+## 10. 使用者只看得到自己的資料（規則 9）
+
+- 使用者只從 `auth.CurrentUser(ctx)` 取得；handler、service 的參數裡的 `userID` 都要能追回這裡，不可來自路徑、query、body、header。
+- 存取使用者資料表的每一條 sqlc 查詢都有 `user_id` 條件，包括列表、加總、每月統計這類彙總查詢；查單筆、修改、刪除用 `WHERE id = $1 AND user_id = $2`。
+- 修改、刪除後檢查影響的列數：0 列要回 `apperr.ErrNotFound`（404），不可回成功。
+- 別人的資料與不存在的資料回應完全相同（404），不回 403。
+- 回應的 struct 沒有 `user_id`，也不會帶出其他使用者的資料（例如 JOIN 之後忘了篩選）。
+- 新的使用者資料表有 `user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE`。
+- 有 A/B 隔離測試：A 建立的資料，B 的列表看不到；B 用 A 的 id 查、改、刪都得到 404，而且 A 的資料不變。
+- 怎麼看：從 handler 一路追到 SQL，確認 `user.ID` 有傳到每一條查詢；搜尋這次新增的 `.sql` 裡每個 `FROM`、`UPDATE`、`DELETE` 是否都有 `user_id`。

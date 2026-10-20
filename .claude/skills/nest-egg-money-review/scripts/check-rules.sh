@@ -77,9 +77,11 @@ find_files frontend/src '*.ts' '*.tsx' >"$tmp/ts"
   grep -v '_test\.go$' "$tmp/go"
   grep -vE '\.(test|spec)\.tsx?$' "$tmp/ts"
 } >"$tmp/code-nontest"
+# 使用者資料規則只看後端 internal 的非測試檔（測試會刻意組出夾帶 user_id 的請求）
+grep '^backend/internal/' "$tmp/go" | grep -v '_test\.go$' >"$tmp/go-internal-nontest"
 
 # check <rule-id> <檔案清單> <regex> <訊息> [<unless-regex>]
-#   檔案清單：go、sql、ts、code-nontest（go 與 ts，不含測試檔）
+#   檔案清單：go、sql、ts、code-nontest（go 與 ts，不含測試檔）、go-internal-nontest（backend/internal 的非測試 Go 檔）
 #   unless-regex：同一行也符合時不算違規
 #   sql 不分大小寫，並略過 -- 開頭的註解行
 check() {
@@ -141,6 +143,10 @@ check secret-log go 'slog\.[A-Za-z]+\(.*(DatabaseURL|DATABASE_URL|[Pp]assword|PA
 # 6. 只有後端呼叫外部 API
 check frontend-external-api ts "(fetch|axios(\.[a-z]+)?)\(\s*[\"'\`]https?://|er-api\.com|twse\.com\.tw|rate\.bot\.com\.tw|alphavantage|finnhub|VITE_[A-Z0-9_]*(KEY|TOKEN|SECRET)" \
   '前端只呼叫自己的 /api；外部資料來源與 API key 只放在後端（RateProvider）'
+
+# 7. 資產資料屬於使用者
+check user-id-from-request go-internal-nontest 'PathValue\("user_id"\)|Query\(\)\.Get\("user_id"\)|FormValue\("user_id"\)|json:"user_id[",]' \
+  '使用者只從 auth.CurrentUser(ctx) 取得：不從路徑、query、form 讀 user_id，請求與回應的 JSON 也不放 user_id'
 
 if [ -s "$tmp/findings" ]; then
   LC_ALL=C sort -t: -k1,1 -k2,2n -k3,3 "$tmp/findings"
