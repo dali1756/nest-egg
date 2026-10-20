@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -18,6 +19,7 @@ import (
 	"nest-egg/backend/internal/platform/health"
 	"nest-egg/backend/internal/platform/middleware"
 	"nest-egg/backend/internal/platform/ratelimit"
+	"nest-egg/backend/internal/platform/requestid"
 )
 
 func main() {
@@ -32,15 +34,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	opts := &slog.HandlerOptions{Level: cfg.LogLevel}
-	var handler slog.Handler
-	switch cfg.LogFormat {
-	case "json":
-		handler = slog.NewJSONHandler(os.Stdout, opts)
-	default:
-		handler = slog.NewTextHandler(os.Stdout, opts)
-	}
-	slog.SetDefault(slog.New(handler))
+	slog.SetDefault(newLogger(os.Stdout, cfg))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -64,7 +58,7 @@ func run() error {
 	}
 	authHandler := newAuthHandler(authSvc, cfg, slog.Default())
 
-	srv := newServer(cfg.HTTPAddr, newHandler(pool, authHandler, cfg.CookieSecure))
+	srv := newServer(cfg.HTTPAddr, newHandler(pool, authHandler, cfg))
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -107,13 +101,33 @@ func newServer(addr string, h http.Handler) *http.Server {
 	}
 }
 
-func newHandler(pinger health.Pinger, authHandler *auth.Handler, hsts bool) http.Handler {
+func newHandler(pinger health.Pinger, authHandler *auth.Handler, cfg config.Config, protectedRoutes ...func(*http.ServeMux)) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", health.NewHandler(pinger).Get)
 	authHandler.Routes(mux)
 
+	protected := http.NewServeMux()
+	for _, register := range protectedRoutes {
+		register(protected)
+	}
+	mux.Handle("/api/", authHandler.RequireUser(protected))
+
 	var h http.Handler = http.MaxBytesHandler(mux, maxBodyBytes)
 	h = http.NewCrossOriginProtection().Handler(h)
-	h = middleware.SecurityHeaders(h, hsts)
-	return middleware.AccessLog(h)
+	h = middleware.SecurityHeaders(h, cfg.CookieSecure)
+	h = middleware.Recover(h)
+	h = middleware.AccessLog(h, func(r *http.Request) string { return ratelimit.ClientIP(r, cfg.TrustedProxies) })
+	return requestid.Middleware(h)
+}
+
+func newLogger(w io.Writer, cfg config.Config) *slog.Logger {
+	opts := &slog.HandlerOptions{Level: cfg.LogLevel}
+	var handler slog.Handler
+	switch cfg.LogFormat {
+	case "json":
+		handler = slog.NewJSONHandler(w, opts)
+	default:
+		handler = slog.NewTextHandler(w, opts)
+	}
+	return slog.New(requestid.NewLogHandler(handler))
 }

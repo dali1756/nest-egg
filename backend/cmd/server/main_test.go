@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -26,20 +28,27 @@ func (okPinger) Ping(context.Context) error { return nil }
 // newTestHandler 只有一個使用者 me@example.com，密碼 Passw0rd!。
 func newTestHandler(t *testing.T) http.Handler {
 	t.Helper()
+	return newTestHandlerWithUsers(t, "me@example.com")
+}
+
+func newTestHandlerWithUsers(t *testing.T, emails ...string) http.Handler {
+	t.Helper()
 	hash, err := bcrypt.GenerateFromPassword([]byte("Passw0rd!"), bcrypt.MinCost)
 	if err != nil {
 		t.Fatal(err)
 	}
 	store := authtest.NewMemStore()
-	if _, err := store.CreateUser(t.Context(), "me@example.com", string(hash)); err != nil {
-		t.Fatal(err)
+	for _, email := range emails {
+		if _, err := store.CreateUser(t.Context(), email, string(hash)); err != nil {
+			t.Fatal(err)
+		}
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	svc, err := auth.NewService(store, auth.Config{BcryptCost: bcrypt.MinCost}, log)
 	if err != nil {
 		t.Fatalf("auth.NewService: %v", err)
 	}
-	return newHandler(okPinger{}, newAuthHandler(svc, config.Config{}, log), false)
+	return newHandler(okPinger{}, newAuthHandler(svc, config.Config{}, log), config.Config{}, testRoutes)
 }
 
 func serve(h http.Handler, req *http.Request) *httptest.ResponseRecorder {
@@ -190,13 +199,181 @@ func TestTrustedProxyForwardedForIsUsed(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := config.Config{TrustedProxies: []netip.Prefix{netip.MustParsePrefix("192.0.2.1/32")}}
-	h := newHandler(okPinger{}, newAuthHandler(svc, cfg, log), false)
+	h := newHandler(okPinger{}, newAuthHandler(svc, cfg, log), cfg)
 
 	for i := 1; i <= 11; i++ {
 		req := loginRequest("Wr0ngpass!")
 		req.Header.Set("X-Forwarded-For", "198.51.100."+strconv.Itoa(i))
 		if rec := serve(h, req); rec.Code == http.StatusTooManyRequests {
 			t.Fatalf("login %d from a different client behind the proxy = 429, want each client counted separately", i)
+		}
+	}
+}
+
+func testRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/example", func(w http.ResponseWriter, r *http.Request) {
+		u, ok := auth.CurrentUser(r.Context())
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write([]byte(u.Email))
+	})
+	mux.HandleFunc("GET /api/panic", func(http.ResponseWriter, *http.Request) {
+		panic("boom")
+	})
+}
+
+func loginCookie(t *testing.T, h http.Handler) *http.Cookie {
+	t.Helper()
+	rec := serve(h, loginRequest("Passw0rd!"))
+	if rec.Code != http.StatusOK || len(rec.Result().Cookies()) != 1 {
+		t.Fatalf("login = %d %s, want 200 with a session cookie", rec.Code, rec.Body)
+	}
+	return rec.Result().Cookies()[0]
+}
+
+func get(path string, cookie *http.Cookie) *http.Request {
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	if cookie != nil {
+		req.AddCookie(cookie)
+	}
+	return req
+}
+
+func TestProtectedRoutesRequireLogin(t *testing.T) {
+	h := newTestHandler(t)
+
+	anon := serve(h, get("/api/example", nil))
+	if anon.Code != http.StatusUnauthorized || strings.TrimSpace(anon.Body.String()) != `{"error":"unauthorized"}` {
+		t.Errorf("anonymous /api/example = %d %s, want 401 {\"error\":\"unauthorized\"}", anon.Code, anon.Body)
+	}
+
+	authed := serve(h, get("/api/example", loginCookie(t, h)))
+	if authed.Code != http.StatusOK || authed.Body.String() != "me@example.com" {
+		t.Errorf("logged-in /api/example = %d %q, want 200 me@example.com", authed.Code, authed.Body)
+	}
+}
+
+func TestUnknownAPIPathsHideBehindLogin(t *testing.T) {
+	h := newTestHandler(t)
+	if rec := serve(h, get("/api/does-not-exist", nil)); rec.Code != http.StatusUnauthorized {
+		t.Errorf("anonymous unknown path = %d, want 401", rec.Code)
+	}
+	if rec := serve(h, get("/api/does-not-exist", loginCookie(t, h))); rec.Code != http.StatusNotFound {
+		t.Errorf("logged-in unknown path = %d, want 404", rec.Code)
+	}
+}
+
+func TestEveryResponseHasARequestID(t *testing.T) {
+	h := newTestHandler(t)
+	crossSite := loginRequest("Passw0rd!")
+	crossSite.Header.Set("Sec-Fetch-Site", "cross-site")
+	for i := 1; i <= 10; i++ {
+		serve(h, loginRequest("Wr0ngpass!"))
+	}
+
+	for name, tc := range map[string]struct {
+		req    *http.Request
+		status int
+	}{
+		"health":       {httptest.NewRequest(http.MethodGet, "/api/health", nil), http.StatusOK},
+		"cross-site":   {crossSite, http.StatusForbidden},
+		"rate limited": {loginRequest("Wr0ngpass!"), http.StatusTooManyRequests},
+		"anonymous":    {get("/api/example", nil), http.StatusUnauthorized},
+	} {
+		rec := serve(h, tc.req)
+		if rec.Code != tc.status {
+			t.Errorf("%s: status = %d, want %d", name, rec.Code, tc.status)
+		}
+		if rec.Header().Get("X-Request-ID") == "" {
+			t.Errorf("%s: no X-Request-ID header", name)
+		}
+	}
+}
+
+func TestPanicIsRecovered(t *testing.T) {
+	var logs bytes.Buffer
+	captureDefaultLogger(t, newLogger(&logs, config.Config{LogFormat: "json"}))
+	h := newTestHandler(t)
+
+	rec := serve(h, get("/api/panic", loginCookie(t, h)))
+	id := rec.Header().Get("X-Request-ID")
+	if want := `{"error":"internal error","request_id":"` + id + `"}`; rec.Code != http.StatusInternalServerError || strings.TrimSpace(rec.Body.String()) != want {
+		t.Errorf("panic = %d %s, want 500 %s", rec.Code, rec.Body, want)
+	}
+	if id == "" || rec.Header().Get("X-Frame-Options") != "DENY" {
+		t.Errorf("panic response headers %v, want X-Request-ID and security headers", rec.Header())
+	}
+
+	type logLine struct {
+		Msg       string `json:"msg"`
+		RequestID string `json:"request_id"`
+		Status    int    `json:"status"`
+	}
+	var panicLine, accessLine *logLine
+	for _, raw := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+		var l logLine
+		if err := json.Unmarshal([]byte(raw), &l); err != nil {
+			t.Fatalf("parse log line %q: %v", raw, err)
+		}
+		if l.RequestID != id {
+			continue
+		}
+		switch l.Msg {
+		case "panic recovered":
+			panicLine = &l
+		case "request":
+			accessLine = &l
+		}
+	}
+	if panicLine == nil {
+		t.Errorf("no panic log with request_id %s:\n%s", id, logs.String())
+	}
+	if accessLine == nil || accessLine.Status != http.StatusInternalServerError {
+		t.Errorf("access log for request %s = %+v, want status 500", id, accessLine)
+	}
+
+	if rec := serve(h, httptest.NewRequest(http.MethodGet, "/api/health", nil)); rec.Code != http.StatusOK {
+		t.Errorf("request after panic = %d, want 200", rec.Code)
+	}
+}
+
+func TestAccessLogIgnoresSpoofedForwardedFor(t *testing.T) {
+	var logs bytes.Buffer
+	captureDefaultLogger(t, newLogger(&logs, config.Config{LogFormat: "json"}))
+	h := newTestHandler(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	req.RemoteAddr = "203.0.113.7:51000"
+	req.Header.Set("X-Forwarded-For", "198.51.100.1")
+	serve(h, req)
+
+	if !strings.Contains(logs.String(), `"client_ip":"203.0.113.7"`) || strings.Contains(logs.String(), "198.51.100.1") {
+		t.Errorf("access log %s, want client_ip 203.0.113.7 and no forwarded address", logs.String())
+	}
+}
+
+func captureDefaultLogger(t *testing.T, l *slog.Logger) {
+	t.Helper()
+	old := slog.Default()
+	slog.SetDefault(l)
+	t.Cleanup(func() { slog.SetDefault(old) })
+}
+
+func TestIdentityComesOnlyFromTheSession(t *testing.T) {
+	h := newTestHandlerWithUsers(t, "me@example.com", "other@example.com")
+	cookie := loginCookie(t, h)
+
+	for path, want := range map[string]string{
+		"/api/auth/me?user_id=2": `{"email":"me@example.com"}`,
+		"/api/example?user_id=2": `me@example.com`,
+	} {
+		req := get(path, cookie)
+		req.Header.Set("X-User-ID", "2")
+		rec := serve(h, req)
+		if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != want {
+			t.Errorf("%s as A = %d %s, want 200 %s", path, rec.Code, rec.Body, want)
 		}
 	}
 }

@@ -18,6 +18,7 @@ import (
 
 	"nest-egg/backend/internal/auth"
 	"nest-egg/backend/internal/auth/authtest"
+	"nest-egg/backend/internal/platform/requestid"
 )
 
 const goodPassword = "Passw0rd!"
@@ -76,7 +77,7 @@ func newTestEnv(t *testing.T, opts envOptions) *testEnv {
 		clock: &fakeClock{now: time.Date(2026, 10, 16, 9, 0, 0, 0, time.UTC)},
 		logs:  &syncBuffer{},
 	}
-	log := slog.New(slog.NewJSONHandler(e.logs, nil))
+	log := slog.New(requestid.NewLogHandler(slog.NewJSONHandler(e.logs, nil)))
 	svc, err := auth.NewService(e.store, auth.Config{BcryptCost: bcrypt.MinCost, Now: e.clock.Now, Mailer: opts.mailer}, log)
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
@@ -94,7 +95,7 @@ func newTestEnv(t *testing.T, opts envOptions) *testEnv {
 		w.Header().Set("X-User", u.Email)
 		w.WriteHeader(http.StatusNoContent)
 	})))
-	e.srv = httptest.NewServer(mux)
+	e.srv = httptest.NewServer(requestid.Middleware(mux))
 	t.Cleanup(e.srv.Close)
 	return e
 }
@@ -498,7 +499,11 @@ func TestStoreErrorReturnsInternalError(t *testing.T) {
 		e.do(t, c, http.MethodGet, "/api/auth/me", nil),
 	} {
 		expectStatus(t, "with store error", r, http.StatusInternalServerError)
-		expectBody(t, "with store error", r, `{"error":"internal error"}`)
+		id := r.header.Get("X-Request-ID")
+		expectBody(t, "with store error", r, `{"error":"internal error","request_id":"`+id+`"}`)
+		if !strings.Contains(e.logs.String(), `"request_id":"`+id+`"`) {
+			t.Errorf("no log line carries request_id %s:\n%s", id, e.logs)
+		}
 	}
 	if !strings.Contains(e.logs.String(), "connection refused") {
 		t.Errorf("logs do not contain the store error:\n%s", e.logs)

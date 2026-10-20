@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"nest-egg/backend/internal/platform/httpx"
 )
 
 type HandlerConfig struct {
@@ -285,7 +287,7 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 
 func (h *Handler) internalError(w http.ResponseWriter, r *http.Request, err error) {
 	h.log.ErrorContext(r.Context(), "auth request failed", "method", r.Method, "path", r.URL.Path, "err", err)
-	writeError(w, http.StatusInternalServerError, "internal error")
+	httpx.WriteInternalError(w, r)
 }
 
 func writeError(w http.ResponseWriter, code int, msg string) {
