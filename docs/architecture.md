@@ -2,10 +2,29 @@
 
 ## 1. 目標
 
-- 記錄每筆換匯：實際成交匯率、市場參考匯率、匯差
-- 每月加權平均換匯成本，比較這個月是否比上個月買貴
-- 依今日匯率算目前市值，與成本比較得出未實現損益
-- 之後加入台股、美股
+開放註冊的個人資產總覽：每個人只記錄、只看得到自己的資產。
+
+- **記錄每一筆交易：** 現金存入、提領、換匯、買進與賣出股票。持股、均價、餘額都由系統依交易計算。
+- **資產總覽：**
+  - 股票區：像銀行 app 一樣顯示市值、均價（含手續費）、損益。
+  - 現金區：依幣別分開顯示；外幣也有均價與損益（從換匯紀錄算出，見下方範例）。
+  - 總額：以當天匯率折合台幣。
+- **換匯成本：** 記錄每筆換匯的成交匯率與市場參考匯率、匯差，以及每月加權平均成本，比較這個月是否比上個月買貴。
+- **價格與匯率每天更新一次**；總額每天會隨價格浮動。
+- **美股以台幣交割：** 從台幣帳戶扣款，手續費也是台幣。股票交易本身記銀行的換算匯率，不經過美金現金，也不另外產生換匯紀錄。
+
+### 開發階段
+
+| 步驟 | 內容 | 完成後看得到 |
+| ---- | ---- | ------------ |
+| 會員 | 註冊、登入、session、鎖定、忘記與變更密碼 | 登入後的首頁 |
+| 1 基礎架構 | `/api/` 預設需要登入、統一錯誤處理、request ID、panic 處理、「資料屬於使用者」規則與檢查 | 每個回應都有 `X-Request-ID` |
+| 2 幣別與每日匯率 | `currencies`、`RateProvider`、每天抓一次存進 `rate_snapshots` | 最新匯率 API |
+| 3 現金與換匯 | 存入、提領、換匯 | 總資產頁第一版：現金區（各幣別、外幣均價與損益）與台幣總額 |
+| 4 台股 | 買進、賣出、每日收盤價，買賣連動台幣現金 | 股票區：市值、均價、損益 |
+| 5 美股 | 台幣交割、每日收盤價（資料來源待查） | 美股加入股票區，損益含匯差 |
+
+各步驟的資料表與 API 細節在各自的 OpenSpec change 決定，第 5、6 節是草稿。
 
 ### 範例
 
@@ -34,7 +53,7 @@
 
 | 層        | 選擇                                | 理由                                                                                                                                                                        |
 | --------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 後端路由  | 標準函式庫 `net/http`               | Go 1.22+ 支援 `GET /api/x/{id}` 路由                                                                                                                                        |
+| 後端路徑  | 標準函式庫 `net/http`               | Go 1.22+ 支援 `GET /api/x/{id}` 路徑                                                                                                                                        |
 | 資料庫    | PostgreSQL + pgx/v5                 | `NUMERIC` 精確存金額                                                                                                                                                        |
 | SQL       | sqlc                                | 從 SQL 產生型別安全的 Go 程式碼                                                                                                                                             |
 | Migration | goose                               | 管理資料表版本                                                                                                                                                              |
@@ -55,14 +74,15 @@ sqlc 與 decimal 的整合：在 `sqlc.yaml` 用 override 把 `pg_catalog.numeri
 ```
 nest-egg/
 ├── backend/
-│   ├── cmd/server/main.go     # 程式進入點：讀設定、連 DB、註冊路由、啟動排程
+│   ├── cmd/server/main.go     # 程式進入點：讀設定、連 DB、註冊路徑、啟動排程
 │   ├── internal/
 │   │   ├── auth/              # 會員：註冊、登入、session、鎖定、忘記密碼、RequireUser；authtest/ 是測試用的記憶體 Store
 │   │   ├── currency/          # 幣別
 │   │   ├── fx/                # 換匯交易：handler.go / service.go / repository.go
 │   │   ├── rate/              # 匯率：RateProvider interface、排程、rate_snapshots
-│   │   ├── stock/             # 第 4 階段
-│   │   └── platform/          # config、db（連線、migration、sqlc 產生的 dbgen）、health（健康檢查）、middleware（access log）
+│   │   ├── stock/             # 第 4、5 步：台股、美股
+│   │   └── platform/          # config、db（連線、migration、sqlc 產生的 dbgen）、health（健康檢查）、middleware（access log、panic）、
+│   │                          # apperr（錯誤型別）、httpx（統一錯誤處理、JSON 讀寫）、requestid（request ID、帶 request_id 的 log）、ratelimit
 │   ├── db/
 │   │   ├── migrations/        # goose
 │   │   └── queries/           # sqlc 的 .sql
@@ -72,7 +92,7 @@ nest-egg/
 │   └── go.mod                 # module nest-egg/backend
 ├── frontend/
 │   ├── Dockerfile             # 開發用映像（Vite）
-│   └── src/{api,pages,components,hooks,validation,test}  # routes.tsx 定義路由；validation 放和後端共用規則的 Zod schema
+│   └── src/{api,pages,components,hooks,validation,test}  # routes.tsx 定義路徑；validation 放和後端共用規則的 Zod schema
 ├── docs/
 │   └── architecture.md
 ├── docker-compose.yml         # 開發環境：db、backend、frontend 一起啟動
@@ -87,6 +107,21 @@ nest-egg/
 
 ## 5. 資料表
 
+### 資料屬於使用者
+
+每個人只看得到自己的資產，這是最重要的資安要求（CLAUDE.md 設計規則第 9 條）：
+
+- **使用者只從登入狀態取得：** handler 用 `auth.CurrentUser(ctx)`，MUST NOT 從路徑、query、body、header 讀 `user_id`。
+- **資料表：** 屬於使用者的資料表都有 `user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE`。`currencies`、`rate_snapshots` 這類所有人共用的資料沒有 `user_id`。
+- **查詢：** 每條 sqlc 查詢都用 `user_id` 篩選，包括列表與彙總；查單筆、修改、刪除用 `WHERE id = $1 AND user_id = $2`，影響 0 列時回 `apperr.ErrNotFound`。
+- **別人的資料和不存在一樣回 404**，不回 403，不讓別人知道這個 id 存在。
+- **回應不含 `user_id`**，也不帶出其他使用者的資料。
+- **路徑：** 業務 API 註冊在受保護的 mux 上，`/api/` 底下除了公開路徑（health、註冊、登入、登出、忘記與重設密碼）一律先經過 `RequireUser`（`cmd/server/main.go` 的 `newHandler`）。
+- **測試：** 每個使用者資料 API 都有 A/B 隔離測試：A 建立的資料，B 的列表看不到；B 用 A 的 id 查、改、刪都得到 404，A 的資料不變。
+- **自動檢查：** `nest-egg-money-review` 的 `user-id-from-request` 規則抓「從請求讀 `user_id`」；查詢有沒有篩選要人工檢查（`references/judgement.md` 第 10 項）。
+
+以下是草稿，實際欄位在各步驟的 change 決定。
+
 ```sql
 CREATE TABLE currencies (
     code       CHAR(3)  PRIMARY KEY,   -- ISO 4217：TWD、USD、JPY
@@ -97,6 +132,7 @@ CREATE TABLE currencies (
 -- 換匯交易：付出 pay 換到 buy。買美金：buy=USD、pay=TWD；賣回台幣則相反
 CREATE TABLE fx_trades (
     id           BIGSERIAL PRIMARY KEY,
+    user_id      BIGINT        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     traded_at    TIMESTAMPTZ   NOT NULL,
     buy_currency CHAR(3)       NOT NULL REFERENCES currencies(code),
     buy_amount   NUMERIC(20,4) NOT NULL CHECK (buy_amount > 0),
@@ -129,7 +165,7 @@ SELECT date_trunc('month', traded_at AT TIME ZONE 'Asia/Taipei') AS month,
        SUM(pay_amount + fee) / SUM(buy_amount)                  AS avg_cost_rate,
        SUM(buy_amount)                                          AS total_bought
 FROM fx_trades
-WHERE buy_currency = 'USD' AND pay_currency = 'TWD'
+WHERE user_id = $1 AND buy_currency = 'USD' AND pay_currency = 'TWD'
 GROUP BY month
 ORDER BY month;
 ```
@@ -141,9 +177,10 @@ ORDER BY month;
 
 買外幣時銀行多收的比例：`(trade_rate - market_rate) / market_rate`。`market_rate` 為 NULL 時不計算。賣外幣時方向相反（成交匯率越低越吃虧）。
 
-### 第 4 階段預定
+### 之後的步驟（草稿）
 
-`stock_trades`：symbol、market（TW/US）、side、quantity、price、currency、fee、tax、traded_at。
+- **第 3 步 現金與換匯：** 現金存入、提領的資料表在該步驟的 change 設計；`fx_trades` 如上。現金餘額 = 存入 − 提領 ± 換匯 ± 股票買賣。
+- **第 4、5 步 股票：** `stock_trades`：user_id、symbol、market（TW/US）、side、quantity、price、currency、fee、tax、traded_at。美股台幣交割另外記銀行換算匯率（`settle_rate`）與實際扣款的台幣金額，手續費以台幣計；均價與損益的算法（例如以台幣總成本 ÷ 股數為均價、損益含匯差）在第 5 步確認。
 
 ## 6. API
 
@@ -159,16 +196,18 @@ JSON 中的金額與匯率一律用字串。
 | `POST /api/auth/password/forgot`                                          | 申請重設密碼（email），不論 email 有沒有註冊都回 202；還沒設定寄信時回 503                                                                   | 會員 |
 | `POST /api/auth/password/reset`                                           | 重設密碼（token、password、confirm_password），成功回 204；token 無效或過期 400、欄位錯誤 422                                                | 會員 |
 | `POST /api/auth/password/change`                                          | 變更密碼（current_password、password、confirm_password），需登入；成功回 204，其他裝置全部登出；目前密碼錯誤 403、帳號鎖定 423、欄位錯誤 422 | 會員 |
-| `GET /api/currencies`                                                     | 幣別清單                                                                                                                                     | 1    |
-| `GET /api/fx-trades`                                                      | 換匯交易列表（可用 `from`、`to` 篩選日期）                                                                                                   | 1    |
-| `POST /api/fx-trades`                                                     | 新增換匯交易                                                                                                                                 | 1    |
-| `GET /api/fx-trades/{id}`                                                 | 單筆交易                                                                                                                                     | 1    |
-| `PUT /api/fx-trades/{id}`                                                 | 修改交易                                                                                                                                     | 1    |
-| `DELETE /api/fx-trades/{id}`                                              | 刪除交易                                                                                                                                     | 1    |
-| `GET /api/fx-trades/monthly-cost?buy=USD&pay=TWD`                         | 每月加權平均成本                                                                                                                             | 1    |
+| `GET /api/currencies`                                                     | 幣別清單                                                                                                                                     | 2    |
+| `GET /api/fx-trades`                                                      | 換匯交易列表（可用 `from`、`to` 篩選日期）                                                                                                   | 3    |
+| `POST /api/fx-trades`                                                     | 新增換匯交易                                                                                                                                 | 3    |
+| `GET /api/fx-trades/{id}`                                                 | 單筆交易                                                                                                                                     | 3    |
+| `PUT /api/fx-trades/{id}`                                                 | 修改交易                                                                                                                                     | 3    |
+| `DELETE /api/fx-trades/{id}`                                              | 刪除交易                                                                                                                                     | 3    |
+| `GET /api/fx-trades/monthly-cost?buy=USD&pay=TWD`                         | 每月加權平均成本                                                                                                                             | 3    |
 | `GET /api/rates/latest?base=USD&quote=TWD`                                | 最新市場匯率                                                                                                                                 | 2    |
 | `GET /api/rates/history?base=USD&quote=TWD&from=2026-01-01&to=2026-10-31` | 匯率歷史                                                                                                                                     | 2    |
-| `GET /api/portfolio/summary`                                              | 成本、市值、未實現損益                                                                                                                       | 2    |
+| `GET /api/portfolio/summary`                                              | 成本、市值、未實現損益（第 3 步先做現金，第 4、5 步加入股票）                                                                                | 3    |
+
+「階段」對應第 1 節「開發階段」的步驟。除了 health 與會員的公開路徑，所有 API 都需要登入，而且只回傳自己的資料（第 5 節「資料屬於使用者」）。錯誤回應格式見第 8 節。
 
 `POST /api/fx-trades` 請求範例：
 
@@ -221,15 +260,16 @@ type RateProvider interface {
 
 ### HTTP 層
 
-標 ✅ 的已完成，其餘在第 1 階段開始寫 API 時加進 `internal/platform/`：
+都已完成。middleware 由外到內：`requestid` → `AccessLog` → `Recover` → `SecurityHeaders` → `CrossOriginProtection` → `MaxBytesHandler` → mux（`cmd/server/main.go` 的 `newHandler`）。
 
 | 項目           | 做法                                                                                                                                                                                                                                                                          |
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 統一錯誤處理   | handler 寫成 `func(w http.ResponseWriter, r *http.Request) error`，由一個轉接函式統一記 log、決定狀態碼（用 `errors.Is` 把「找不到」對應成 404 等），並輸出錯誤 JSON                                                                                                          |
-| 錯誤回應       | 前端只收到通用訊息和 request ID，例如 `{"error":"internal error","request_id":"..."}`；內部錯誤細節只留在後端 log                                                                                                                                                             |
-| request ID     | middleware 為每個請求產生 ID（`crypto/rand.Text()`），放進 context 和 `X-Request-ID` 回應標頭；這個請求的每一行 log 都帶上 `request_id`                                                                                                                                       |
-| access log     | 每個請求記一行：`method`、`path`、`status`、`duration_ms`（`platform/middleware/accesslog.go`）；做好 request ID 後再加上 `request_id`                                                                                                                                        |
-| panic          | middleware 用 `recover` 接住，記一筆 ERROR（含 stack trace）並回 500                                                                                                                                                                                                          |
+| 統一錯誤處理   | 業務 handler 寫成 `func(w http.ResponseWriter, r *http.Request) error`，用 `httpx.Handler` 轉接：`apperr.ErrNotFound` → 404、`*apperr.ValidationError` → 422（含 `fields`）、`httpx.DecodeJSON` 的錯誤 → 400 或 413、其他 → 500 並記一次 ERROR。service 層的輸入問題（小數位數、幣別不存在、query 格式）一律用 `ValidationError`；新的錯誤種類（例如 409）等需要時再加進 `apperr` |
+| 錯誤回應       | 前端只收到通用訊息和 request ID，例如 `{"error":"internal error","request_id":"..."}`；內部錯誤細節只留在後端 log。會員 API 的 500 也帶 `request_id`                                                                                                                         |
+| JSON 請求      | `httpx.DecodeJSON` 拒絕不認得的欄位（例如把 `fee` 拼成 `fees`）與 JSON 之後的多餘內容，回 400                                                                                                                                                                              |
+| request ID     | `platform/requestid` 為每個請求產生 ID（`crypto/rand.Text()`），放進 context 和 `X-Request-ID` 回應標頭；不採用請求帶來的 `X-Request-ID`。`requestid.NewLogHandler` 包住 slog handler，這個請求透過 context 記的每一行 log 都自動帶上 `request_id`                          |
+| access log     | 每個請求記一行：`method`、`path`（不含 query string）、`status`、`duration_ms`、`client_ip`、`request_id`（`platform/middleware/accesslog.go`）。`client_ip` 與次數限制用同一套判斷（`TRUSTED_PROXIES`、IPv6 記 /64）                                                       |
+| panic          | `platform/middleware/recover.go` 用 `recover` 接住，記一筆 ERROR（含 stack trace）並回 500；`http.ErrAbortHandler` 照原樣往上拋                                                                                                                                               |
 | 請求大小與逾時 | `http.MaxBytesHandler` 限制 body 1 MB；`http.Server` 設 `ReadHeaderTimeout`、`ReadTimeout`、`WriteTimeout`、`IdleTimeout`（`cmd/server/main.go`）                                                                                                                             |
 | 安全性 header  | 每個回應都帶 CSP（`default-src 'none'`）、`X-Frame-Options: DENY`、`nosniff`、`Referrer-Policy: no-referrer`、`Cache-Control: no-store`；`COOKIE_SECURE=true`（HTTPS）時加 HSTS（`platform/middleware/securityheaders.go`）。之後用 embed 提供前端頁面時，HTML 要另外設定 CSP |
 
@@ -245,7 +285,7 @@ type RateProvider interface {
 
 - **開發：** `docker-compose up` 一次啟動 PostgreSQL（本機 `localhost:5433`，TZ=Asia/Taipei）、Go 後端（`localhost:8080`，air 熱重載）與 Vite 開發伺服器（`localhost:5173`）；Vite 用 proxy 把 `/api` 轉到後端，不用處理 CORS。啟動與驗證步驟見 README。
 - **正式環境：** 可用 `embed` 把前端 build 出來的檔案包進 Go 執行檔，只部署一個檔案。
-- **登入：** 自己實作在 `internal/auth`，不用第三方會員套件，回應一律 JSON。跨站的 POST/PUT/PATCH/DELETE 由 `http.CrossOriginProtection` 擋下。之後的業務 API 套 `RequireUser` 要求登入，handler 用 `auth.CurrentUser(ctx)` 取得使用者。安全強度以 OWASP ASVS Level 2 為目標。
+- **登入：** 自己實作在 `internal/auth`，不用第三方會員套件，回應一律 JSON。跨站的 POST/PUT/PATCH/DELETE 由 `http.CrossOriginProtection` 擋下。業務 API 註冊在受保護的 mux 上，`/api/` 底下的非公開路徑一律先經過 `RequireUser`；handler 只用 `auth.CurrentUser(ctx)` 取得使用者（第 5 節「資料屬於使用者」）。安全強度以 OWASP ASVS Level 2 為目標。
   - **次數限制：** 註冊、登入、忘記密碼、重設密碼、變更密碼這些要輸入 email 或密碼的端點，每個 IP 連續 10 次，之後每 6 秒補 1 次，超過回 429 和 `Retry-After`（`platform/ratelimit`、`cmd/server/main.go` 的 `newAuthHandler`）。IPv6 以 /64 為單位。預設只看連線本身的位址，不採用 `X-Forwarded-For`（使用者可以自己加這個 header）；放在反向代理後面時，把代理的 IP 或 CIDR 設進 `TRUSTED_PROXIES`，才會從 header 由右往左跳過代理取出使用者 IP。開發環境經過 Vite proxy，所有請求共用同一個額度。計數存在記憶體，重啟後歸零；之後如果跑多台後端，要改用共用的儲存或在反向代理做限制。
   - **密碼：** 只存 bcrypt 雜湊（cost 12）；舊的雜湊 cost 比較低時，使用者下次登入成功會自動換成 cost 12。規則：8～64 個字元，只能用英文字母、數字、符號（可列印 ASCII，不含空白），大寫、小寫、數字、符號各至少一個。前後端規則一致：`internal/auth/password.go`、`frontend/src/validation/password.ts`，兩邊的測試案例也一致。
   - **Session：** 存在 `sessions` 表，cookie 只放 128 bits 的隨機 token（`crypto/rand.Text()`），資料庫只存 token 的 SHA-256。cookie 是 HttpOnly、`SameSite=Lax`；`COOKIE_SECURE=true` 時加 Secure，名稱改成 `__Host-nest_egg_session`，子網域無法塞同名 cookie 進來。24 小時沒有需要登入的請求就失效；不論有沒有在用，登入滿 7 天一定失效。`last_seen_at` 最多每分鐘更新一次。登出會刪掉資料庫裡的 session，複製出去的 cookie 也跟著失效。

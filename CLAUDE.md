@@ -1,6 +1,6 @@
 # nest-egg
 
-個人資產追蹤系統，核心是**外幣換匯成本**：記錄每筆換匯的實際成交匯率，比較每月平均成本，計算目前市值與未實現損益；之後加入台股、美股。
+註冊的個人資產總覽，**每個人只看得到自己的資產**。記錄每一筆交易（現金存入與提領、換匯、台股與美股買賣），算出股票的市值、均價、損益，現金依幣別分開，總額以當天匯率折合台幣。換匯記錄實際成交匯率，用來算外幣的平均成本與未實現損益。
 
 完整架構、資料表、API 草稿與開發階段見 [docs/architecture.md](docs/architecture.md)。
 
@@ -20,11 +20,12 @@
 6. **匯率報價慣例：1 外幣 = X 台幣**（同銀行牌告）。v1 每筆換匯有一邊必須是 TWD。
 7. **平均成本 = SUM(付出 + 手續費) ÷ SUM(取得)**，不要把各筆匯率相加再平均。
 8. **只有後端呼叫外部 API。** 資料來源包成 `RateProvider` interface，背景 goroutine 每天抓一次存進 `rate_snapshots`；前端只呼叫自己的 `/api`。
+9. **資產資料屬於使用者。** 使用者只從 `auth.CurrentUser(ctx)` 取得，不從網址、query、body、header 讀 `user_id`。使用者資料表都有 `user_id`，每條查詢都用它篩選，查單筆、修改、刪除用 `id AND user_id`。別人的資料和不存在一樣回 404，回應不含 `user_id`。每個使用者資料 API 都要有「A 讀、改、刪不到 B」的測試。業務邏輯 API 註冊在受保護的 mux 上（`/api/` 預設需要登入）。
 
 ## 程式碼慣例
 
 - `backend/internal/` 依功能分 package（`currency`、`fx`、`rate`、`stock`），每個 package 內放 `handler.go`、`service.go`、`repository.go`；共用的設定、DB 連線、middleware 放 `platform/`。
-- 路由用 Go 1.22+ 寫法：`mux.HandleFunc("GET /api/fx-trades/{id}", h.get)`。
+- 路徑用 Go 1.22+ 寫法：`mux.HandleFunc("GET /api/fx-trades/{id}", h.get)`。
 - 錯誤往上傳時用 `fmt.Errorf("...: %w", err)` 包裝。
 - 錯誤只在最上層記 log 一次（`main()`、HTTP 統一錯誤處理、背景工作的最上層），中間層只包裝後回傳。
 - log 用 `log/slog`：訊息用固定字串、變數放欄位；不記密碼、token、完整的 `DATABASE_URL`。request ID、access log、錯誤回應格式見 [docs/architecture.md](docs/architecture.md) 第 8 節。
@@ -55,7 +56,7 @@
 
 ## 開發用 skill
 
-- 改了金額、匯率、日期、幣別或 log 相關的程式碼後，在 commit 或 `/opsx:verify` 之前，用 `nest-egg-money-review` 檢查設計規則。
+- 改了金額、匯率、日期、幣別、log 或使用者資料相關的程式碼後，在 commit 或 `/opsx:verify` 之前，用 `nest-egg-money-review` 檢查設計規則。
 - 整個開發環境的端對端檢查由使用者執行 `/nest-egg-verify`；Claude 不自行啟動或停止容器。
 - 自訂 skill 放在 `.claude/skills/nest-egg-*/` 並進版控；`.claude/` 的其他內容不進版控。
 
