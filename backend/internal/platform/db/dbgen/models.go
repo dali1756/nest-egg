@@ -6,7 +6,15 @@ package dbgen
 
 import (
 	"time"
+
+	"github.com/shopspring/decimal"
 )
+
+type Currency struct {
+	Code      string
+	Name      string
+	MinorUnit int16
+}
 
 type PasswordResetToken struct {
 	ID        int64
@@ -14,6 +22,15 @@ type PasswordResetToken struct {
 	UserID    int64
 	CreatedAt time.Time
 	ExpiresAt time.Time
+}
+
+type RateSnapshot struct {
+	Base      string
+	Quote     string
+	RateDate  time.Time
+	Rate      decimal.Decimal
+	Source    string
+	FetchedAt time.Time
 }
 
 type Session struct {

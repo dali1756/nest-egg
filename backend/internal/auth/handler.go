@@ -13,27 +13,20 @@ import (
 
 type HandlerConfig struct {
 	CookieSecure bool
-	RateLimit    func(http.Handler) http.Handler
 }
 
 type Handler struct {
 	svc          *Service
 	cookieSecure bool
 	cookieName   string
-	rateLimit    func(http.Handler) http.Handler
 	log          *slog.Logger
 }
 
 func NewHandler(svc *Service, cfg HandlerConfig, log *slog.Logger) *Handler {
-	limit := cfg.RateLimit
-	if limit == nil {
-		limit = func(next http.Handler) http.Handler { return next }
-	}
 	return &Handler{
 		svc:          svc,
 		cookieSecure: cfg.CookieSecure,
 		cookieName:   sessionCookieName(cfg.CookieSecure),
-		rateLimit:    limit,
 		log:          log,
 	}
 }
@@ -43,17 +36,6 @@ func sessionCookieName(secure bool) string {
 		return "__Host-nest_egg_session"
 	}
 	return "nest_egg_session"
-}
-
-func (h *Handler) Routes(mux *http.ServeMux) {
-	limit := h.rateLimit
-	mux.Handle("POST /api/auth/register", limit(http.HandlerFunc(h.register)))
-	mux.Handle("POST /api/auth/login", limit(http.HandlerFunc(h.login)))
-	mux.HandleFunc("POST /api/auth/logout", h.logout)
-	mux.Handle("GET /api/auth/me", h.RequireUser(http.HandlerFunc(h.me)))
-	mux.Handle("POST /api/auth/password/forgot", limit(http.HandlerFunc(h.forgotPassword)))
-	mux.Handle("POST /api/auth/password/reset", limit(http.HandlerFunc(h.resetPassword)))
-	mux.Handle("POST /api/auth/password/change", limit(h.RequireUser(http.HandlerFunc(h.changePassword))))
 }
 
 type ctxKey struct{}
@@ -96,7 +78,7 @@ type registerRequest struct {
 	ConfirmPassword string `json:"confirm_password"`
 }
 
-func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	var req registerRequest
 	if !decodeJSON(w, r, &req) {
 		return
@@ -125,7 +107,7 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
-func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
 	if !decodeJSON(w, r, &req) {
 		return
@@ -144,7 +126,7 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 	h.clearCookie(w)
 	if err := h.svc.Logout(r.Context(), h.sessionToken(r)); err != nil {
 		h.internalError(w, r, err)
@@ -157,7 +139,7 @@ type forgotPasswordRequest struct {
 	Email string `json:"email"`
 }
 
-func (h *Handler) forgotPassword(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 	var req forgotPasswordRequest
 	if !decodeJSON(w, r, &req) {
 		return
@@ -179,7 +161,7 @@ type resetPasswordRequest struct {
 	ConfirmPassword string `json:"confirm_password"`
 }
 
-func (h *Handler) resetPassword(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	var req resetPasswordRequest
 	if !decodeJSON(w, r, &req) {
 		return
@@ -208,7 +190,7 @@ type changePasswordRequest struct {
 	ConfirmPassword string `json:"confirm_password"`
 }
 
-func (h *Handler) changePassword(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	var req changePasswordRequest
 	if !decodeJSON(w, r, &req) {
 		return
@@ -235,7 +217,7 @@ func (h *Handler) changePassword(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) me(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	user, _ := CurrentUser(r.Context())
 	writeJSON(w, http.StatusOK, userResponse{Email: user.Email})
 }

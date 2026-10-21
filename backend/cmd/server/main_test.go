@@ -14,11 +14,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shopspring/decimal"
 	"golang.org/x/crypto/bcrypt"
 
 	"nest-egg/backend/internal/auth"
 	"nest-egg/backend/internal/auth/authtest"
+	"nest-egg/backend/internal/currency"
 	"nest-egg/backend/internal/platform/config"
+	"nest-egg/backend/internal/platform/health"
+	"nest-egg/backend/internal/platform/ratelimit"
+	"nest-egg/backend/internal/rate"
 )
 
 type okPinger struct{}
@@ -32,6 +37,14 @@ func newTestHandler(t *testing.T) http.Handler {
 }
 
 func newTestHandlerWithUsers(t *testing.T, emails ...string) http.Handler {
+	t.Helper()
+	public, protected := newRouter(newTestHandlers(t, config.Config{}, nil, emails...))
+	testRoutes(protected)
+	return withMiddleware(public, config.Config{})
+}
+
+// newTestHandlers 的使用者密碼都是 Passw0rd!；幣別與匯率用假的資料；limit 為 nil 時用正式的次數限制。
+func newTestHandlers(t *testing.T, cfg config.Config, limit func(http.Handler) http.Handler, emails ...string) handlers {
 	t.Helper()
 	hash, err := bcrypt.GenerateFromPassword([]byte("Passw0rd!"), bcrypt.MinCost)
 	if err != nil {
@@ -48,7 +61,17 @@ func newTestHandlerWithUsers(t *testing.T, emails ...string) http.Handler {
 	if err != nil {
 		t.Fatalf("auth.NewService: %v", err)
 	}
-	return newHandler(okPinger{}, newAuthHandler(svc, config.Config{}, log), config.Config{}, testRoutes)
+	if limit == nil {
+		limit = newRateLimit(cfg)
+	}
+	currencies := currency.NewService(fakeCurrencyStore{})
+	return handlers{
+		health:    health.NewHandler(okPinger{}),
+		auth:      auth.NewHandler(svc, auth.HandlerConfig{CookieSecure: cfg.CookieSecure}, log),
+		currency:  currency.NewHandler(currencies),
+		rate:      rate.NewHandler(rate.NewService(fakeRateStore{}, nil, currencies)),
+		rateLimit: limit,
+	}
 }
 
 func serve(h http.Handler, req *http.Request) *httptest.ResponseRecorder {
@@ -192,14 +215,8 @@ func TestSpoofedForwardedForDoesNotBypassTheLimit(t *testing.T) {
 }
 
 func TestTrustedProxyForwardedForIsUsed(t *testing.T) {
-	store := authtest.NewMemStore()
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc, err := auth.NewService(store, auth.Config{BcryptCost: bcrypt.MinCost}, log)
-	if err != nil {
-		t.Fatal(err)
-	}
 	cfg := config.Config{TrustedProxies: []netip.Prefix{netip.MustParsePrefix("192.0.2.1/32")}}
-	h := newHandler(okPinger{}, newAuthHandler(svc, cfg, log), cfg)
+	h := newHandler(newTestHandlers(t, cfg, nil), cfg)
 
 	for i := 1; i <= 11; i++ {
 		req := loginRequest("Wr0ngpass!")
@@ -375,5 +392,151 @@ func TestIdentityComesOnlyFromTheSession(t *testing.T) {
 		if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != want {
 			t.Errorf("%s as A = %d %s, want 200 %s", path, rec.Code, rec.Body, want)
 		}
+	}
+}
+
+type fakeCurrencyStore struct{}
+
+func (fakeCurrencyStore) List(context.Context) ([]currency.Currency, error) {
+	return []currency.Currency{{Code: "TWD", Name: "新臺幣", MinorUnit: 2}, {Code: "USD", Name: "美元", MinorUnit: 2}}, nil
+}
+
+func (fakeCurrencyStore) Exists(_ context.Context, code string) (bool, error) {
+	return code == "TWD" || code == "USD", nil
+}
+
+type fakeRateStore struct{}
+
+func (fakeRateStore) Upsert(context.Context, string, []rate.Rate) (rate.UpsertResult, error) {
+	return rate.UpsertResult{}, nil
+}
+
+func (fakeRateStore) On(_ context.Context, base, quote string, date time.Time) (rate.Snapshot, error) {
+	return rate.Snapshot{Rate: rate.Rate{Base: base, Quote: quote, Date: date, Value: decimal.RequireFromString("32.445")}, Source: "cbc"}, nil
+}
+
+func loginCookieAs(t *testing.T, h http.Handler, email string) *http.Cookie {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"email":"`+email+`","password":"Passw0rd!"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := serve(h, req)
+	if rec.Code != http.StatusOK || len(rec.Result().Cookies()) != 1 {
+		t.Fatalf("login as %s = %d %s, want 200 with a session cookie", email, rec.Code, rec.Body)
+	}
+	return rec.Result().Cookies()[0]
+}
+
+// 幣別與匯率是共用資料：每個使用者看到的內容相同，回應不含 user_id。
+func TestSharedDataIsTheSameForEveryUser(t *testing.T) {
+	h := newAppHandler(t, nil, "a@example.com", "b@example.com")
+	a, b := loginCookieAs(t, h, "a@example.com"), loginCookieAs(t, h, "b@example.com")
+
+	for _, path := range []string{"/api/currencies", "/api/rates?base=USD&quote=TWD&date=2026-10-17"} {
+		ra, rb := serve(h, get(path, a)), serve(h, get(path, b))
+		if ra.Code != http.StatusOK || rb.Code != http.StatusOK || ra.Body.String() != rb.Body.String() {
+			t.Errorf("%s: A got %d %s, B got %d %s; want the same 200 response", path, ra.Code, ra.Body, rb.Code, rb.Body)
+		}
+		if strings.Contains(ra.Body.String(), "user_id") {
+			t.Errorf("%s: response %s contains user_id", path, ra.Body)
+		}
+	}
+}
+
+// newAppHandler 是正式的路徑表與 middleware；limit 為 nil 時用正式的次數限制。
+func newAppHandler(t *testing.T, limit func(http.Handler) http.Handler, emails ...string) http.Handler {
+	t.Helper()
+	return newHandler(newTestHandlers(t, config.Config{}, limit, emails...), config.Config{})
+}
+
+func request(method, path string, cookie *http.Cookie) *http.Request {
+	req := httptest.NewRequest(method, path, nil)
+	if cookie != nil {
+		req.AddCookie(cookie)
+	}
+	return req
+}
+
+// apiRoutes 是 routes.go 應該有的每一條路徑；public 以外都要登入。
+var apiRoutes = []struct {
+	method, path string
+	public       bool
+}{
+	{http.MethodGet, "/api/health", true},
+	{http.MethodPost, "/api/auth/register", true},
+	{http.MethodPost, "/api/auth/login", true},
+	{http.MethodPost, "/api/auth/logout", true},
+	{http.MethodPost, "/api/auth/password/forgot", true},
+	{http.MethodPost, "/api/auth/password/reset", true},
+	{http.MethodGet, "/api/auth/me", false},
+	{http.MethodPost, "/api/auth/password/change", false},
+	{http.MethodGet, "/api/currencies", false},
+	{http.MethodGet, "/api/rates?base=USD&quote=TWD", false},
+}
+
+func TestEveryRouteHasTheRightProtection(t *testing.T) {
+	h := newAppHandler(t, nil, "me@example.com")
+	cookie := loginCookie(t, h)
+	notRouted := func(code int) bool { return code == http.StatusNotFound || code == http.StatusMethodNotAllowed }
+
+	for _, rt := range apiRoutes {
+		name := rt.method + " " + rt.path
+		anon := serve(h, request(rt.method, rt.path, nil))
+		if rt.public {
+			if anon.Code == http.StatusUnauthorized || notRouted(anon.Code) {
+				t.Errorf("anonymous %s = %d %s, want a public route", name, anon.Code, anon.Body)
+			}
+			continue
+		}
+		if anon.Code != http.StatusUnauthorized {
+			t.Errorf("anonymous %s = %d, want 401", name, anon.Code)
+		}
+		if authed := serve(h, request(rt.method, rt.path, cookie)); notRouted(authed.Code) {
+			t.Errorf("logged-in %s = %d, want the route to exist", name, authed.Code)
+		}
+	}
+}
+
+func TestOnlyCredentialEndpointsAreRateLimited(t *testing.T) {
+	h := newAppHandler(t, ratelimit.New(1, time.Hour, nil).Middleware, "me@example.com")
+	cookie := loginCookie(t, h) // 用掉唯一的一次
+
+	for _, rt := range []struct {
+		method, path string
+		cookie       *http.Cookie
+	}{
+		{http.MethodPost, "/api/auth/register", nil},
+		{http.MethodPost, "/api/auth/login", nil},
+		{http.MethodPost, "/api/auth/password/forgot", nil},
+		{http.MethodPost, "/api/auth/password/reset", nil},
+		{http.MethodPost, "/api/auth/password/change", cookie},
+	} {
+		if rec := serve(h, request(rt.method, rt.path, rt.cookie)); rec.Code != http.StatusTooManyRequests {
+			t.Errorf("%s %s = %d, want 429", rt.method, rt.path, rec.Code)
+		}
+	}
+	for _, rt := range []struct {
+		method, path string
+		want         int
+	}{
+		{http.MethodGet, "/api/health", http.StatusOK},
+		{http.MethodGet, "/api/auth/me", http.StatusOK},
+		{http.MethodGet, "/api/currencies", http.StatusOK},
+		{http.MethodPost, "/api/auth/logout", http.StatusNoContent},
+	} {
+		if rec := serve(h, request(rt.method, rt.path, cookie)); rec.Code != rt.want {
+			t.Errorf("%s %s = %d, want %d (not rate limited)", rt.method, rt.path, rec.Code, rt.want)
+		}
+	}
+}
+
+// 變更密碼要先登入：沒登入的請求在檢查登入時就被擋下，不消耗這個 IP 的次數。
+func TestAnonymousPasswordChangeDoesNotUseTheRateLimit(t *testing.T) {
+	h := newAppHandler(t, ratelimit.New(1, time.Hour, nil).Middleware, "me@example.com")
+
+	if rec := serve(h, request(http.MethodPost, "/api/auth/password/change", nil)); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous password change = %d, want 401", rec.Code)
+	}
+	if rec := serve(h, loginRequest("Passw0rd!")); rec.Code != http.StatusOK {
+		t.Errorf("login after an anonymous password change = %d, want 200 (the token was not used)", rec.Code)
 	}
 }

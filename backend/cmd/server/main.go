@@ -8,18 +8,21 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 	_ "time/tzdata"
 
 	"nest-egg/backend/db/migrations"
 	"nest-egg/backend/internal/auth"
+	"nest-egg/backend/internal/currency"
 	"nest-egg/backend/internal/platform/config"
 	"nest-egg/backend/internal/platform/db"
 	"nest-egg/backend/internal/platform/health"
 	"nest-egg/backend/internal/platform/middleware"
 	"nest-egg/backend/internal/platform/ratelimit"
 	"nest-egg/backend/internal/platform/requestid"
+	"nest-egg/backend/internal/rate"
 )
 
 func main() {
@@ -56,38 +59,24 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("set up auth: %w", err)
 	}
-	authHandler := newAuthHandler(authSvc, cfg, slog.Default())
+	currencies := currency.NewService(currency.NewRepository(pool))
+	rates := rate.NewService(rate.NewRepository(pool), rate.NewCBCProvider(rate.CBCURL), currencies)
 
-	srv := newServer(cfg.HTTPAddr, newHandler(pool, authHandler, cfg))
-
-	errCh := make(chan error, 1)
-	go func() {
-		slog.Info("http server listening", "addr", cfg.HTTPAddr)
-		errCh <- srv.ListenAndServe()
-	}()
-
-	select {
-	case err := <-errCh:
-		return fmt.Errorf("http server: %w", err)
-	case <-ctx.Done():
+	h := handlers{
+		health:    health.NewHandler(pool),
+		auth:      auth.NewHandler(authSvc, auth.HandlerConfig{CookieSecure: cfg.CookieSecure}, slog.Default()),
+		currency:  currency.NewHandler(currencies),
+		rate:      rate.NewHandler(rates),
+		rateLimit: newRateLimit(cfg),
 	}
-
-	slog.Info("shutting down")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("shutdown http server: %w", err)
-	}
-	return nil
+	srv := newServer(cfg.HTTPAddr, newHandler(h, cfg))
+	return runServer(ctx, srv, rate.NewUpdater(rates, slog.Default()).Run)
 }
 
 const maxBodyBytes = 1 << 20
 
-func newAuthHandler(svc *auth.Service, cfg config.Config, log *slog.Logger) *auth.Handler {
-	return auth.NewHandler(svc, auth.HandlerConfig{
-		CookieSecure: cfg.CookieSecure,
-		RateLimit:    ratelimit.New(10, 6*time.Second, cfg.TrustedProxies).Middleware,
-	}, log)
+func newRateLimit(cfg config.Config) func(http.Handler) http.Handler {
+	return ratelimit.New(10, 6*time.Second, cfg.TrustedProxies).Middleware
 }
 
 func newServer(addr string, h http.Handler) *http.Server {
@@ -101,18 +90,13 @@ func newServer(addr string, h http.Handler) *http.Server {
 	}
 }
 
-func newHandler(pinger health.Pinger, authHandler *auth.Handler, cfg config.Config, protectedRoutes ...func(*http.ServeMux)) http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/health", health.NewHandler(pinger).Get)
-	authHandler.Routes(mux)
+func newHandler(h handlers, cfg config.Config) http.Handler {
+	public, _ := newRouter(h)
+	return withMiddleware(public, cfg)
+}
 
-	protected := http.NewServeMux()
-	for _, register := range protectedRoutes {
-		register(protected)
-	}
-	mux.Handle("/api/", authHandler.RequireUser(protected))
-
-	var h http.Handler = http.MaxBytesHandler(mux, maxBodyBytes)
+func withMiddleware(next http.Handler, cfg config.Config) http.Handler {
+	var h http.Handler = http.MaxBytesHandler(next, maxBodyBytes)
 	h = http.NewCrossOriginProtection().Handler(h)
 	h = middleware.SecurityHeaders(h, cfg.CookieSecure)
 	h = middleware.Recover(h)
@@ -130,4 +114,36 @@ func newLogger(w io.Writer, cfg config.Config) *slog.Logger {
 		handler = slog.NewTextHandler(w, opts)
 	}
 	return slog.New(requestid.NewLogHandler(handler))
+}
+
+func runServer(ctx context.Context, srv *http.Server, jobs ...func(context.Context)) error {
+	jobCtx, cancelJobs := context.WithCancel(context.WithoutCancel(ctx))
+	var wg sync.WaitGroup
+	defer func() {
+		cancelJobs()
+		wg.Wait()
+	}()
+	for _, job := range jobs {
+		wg.Go(func() { job(jobCtx) })
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		slog.Info("http server listening", "addr", srv.Addr)
+		errCh <- srv.ListenAndServe()
+	}()
+
+	select {
+	case err := <-errCh:
+		return fmt.Errorf("http server: %w", err)
+	case <-ctx.Done():
+	}
+
+	slog.Info("shutting down")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		return fmt.Errorf("shutdown http server: %w", err)
+	}
+	return nil
 }

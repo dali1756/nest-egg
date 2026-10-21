@@ -34,13 +34,13 @@ func appliedCount(t *testing.T, pool *pgxpool.Pool) int {
 	return n
 }
 
-func TestMigrateCreatesUsersTable(t *testing.T) {
+func TestMigrateCreatesTables(t *testing.T) {
 	pool := dbtest.EmptySchema(t)
 
 	if err := db.Migrate(t.Context(), pool, migrations.FS); err != nil {
 		t.Fatalf("Migrate: %v", err)
 	}
-	for _, table := range []string{"users", "goose_db_version"} {
+	for _, table := range []string{"users", "sessions", "password_reset_tokens", "currencies", "rate_snapshots", "goose_db_version"} {
 		if !tableExists(t, pool, table) {
 			t.Errorf("table %s does not exist after Migrate", table)
 		}

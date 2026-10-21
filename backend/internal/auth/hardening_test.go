@@ -6,40 +6,17 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
 	"nest-egg/backend/internal/auth"
 	"nest-egg/backend/internal/auth/authtest"
-	"nest-egg/backend/internal/platform/ratelimit"
 )
 
 var errorAfterValidation = errors.New("store must not be called")
 
 func changeBody(current, password string) map[string]string {
 	return map[string]string{"current_password": current, "password": password, "confirm_password": password}
-}
-
-func TestCredentialEndpointsUseTheRateLimit(t *testing.T) {
-	e := newTestEnv(t, envOptions{rateLimit: ratelimit.New(1, time.Hour, nil).Middleware})
-	c := e.client(t)
-	expectStatus(t, "register uses the only token", e.register(t, c, "me@example.com"), http.StatusCreated)
-
-	limited := map[string]response{
-		"register": e.register(t, e.client(t), "other@example.com"),
-		"login":    e.login(t, e.client(t), "me@example.com", goodPassword),
-		"forgot":   e.do(t, e.client(t), http.MethodPost, "/api/auth/password/forgot", forgotBody("me@example.com")),
-		"reset":    e.do(t, e.client(t), http.MethodPost, "/api/auth/password/reset", resetBody("token", newPassword)),
-		"change":   e.do(t, c, http.MethodPost, "/api/auth/password/change", changeBody(goodPassword, newPassword)),
-	}
-	for name, r := range limited {
-		if r.status != http.StatusTooManyRequests {
-			t.Errorf("%s = %d, want 429", name, r.status)
-		}
-	}
-	expectStatus(t, "me is not limited", e.do(t, c, http.MethodGet, "/api/auth/me", nil), http.StatusOK)
-	expectStatus(t, "logout is not limited", e.do(t, c, http.MethodPost, "/api/auth/logout", nil), http.StatusNoContent)
 }
 
 func TestChangePasswordLogsOutOtherDevices(t *testing.T) {

@@ -13,3 +13,9 @@ sql:
         overrides:
           - db_type: timestamptz
             go_type: time.Time
+          # 金額與匯率不用 float（CLAUDE.md 設計規則 1）
+          - db_type: pg_catalog.numeric
+            go_type: github.com/shopspring/decimal.Decimal
+          # 讀出來是 UTC 午夜，用 taipei.FromDBDate 換成台北日期
+          - db_type: date
+            go_type: time.Time

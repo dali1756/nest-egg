@@ -67,7 +67,6 @@ type testEnv struct {
 type envOptions struct {
 	cookieSecure bool
 	mailer       auth.Mailer
-	rateLimit    func(http.Handler) http.Handler
 }
 
 func newTestEnv(t *testing.T, opts envOptions) *testEnv {
@@ -82,11 +81,17 @@ func newTestEnv(t *testing.T, opts envOptions) *testEnv {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	h := auth.NewHandler(svc, auth.HandlerConfig{CookieSecure: opts.cookieSecure, RateLimit: opts.rateLimit}, log)
+	h := auth.NewHandler(svc, auth.HandlerConfig{CookieSecure: opts.cookieSecure}, log)
 
-	mux := http.NewServeMux()
-	h.Routes(mux)
-	mux.Handle("GET /api/protected", h.RequireUser(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	public, protected := http.NewServeMux(), http.NewServeMux()
+	public.HandleFunc("POST /api/auth/register", h.Register)
+	public.HandleFunc("POST /api/auth/login", h.Login)
+	public.HandleFunc("POST /api/auth/logout", h.Logout)
+	public.HandleFunc("POST /api/auth/password/forgot", h.ForgotPassword)
+	public.HandleFunc("POST /api/auth/password/reset", h.ResetPassword)
+	protected.HandleFunc("GET /api/auth/me", h.Me)
+	protected.HandleFunc("POST /api/auth/password/change", h.ChangePassword)
+	protected.HandleFunc("GET /api/protected", func(w http.ResponseWriter, r *http.Request) {
 		u, ok := auth.CurrentUser(r.Context())
 		if !ok {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -94,8 +99,9 @@ func newTestEnv(t *testing.T, opts envOptions) *testEnv {
 		}
 		w.Header().Set("X-User", u.Email)
 		w.WriteHeader(http.StatusNoContent)
-	})))
-	e.srv = httptest.NewServer(requestid.Middleware(mux))
+	})
+	public.Handle("/api/", h.RequireUser(protected))
+	e.srv = httptest.NewServer(requestid.Middleware(public))
 	t.Cleanup(e.srv.Close)
 	return e
 }
