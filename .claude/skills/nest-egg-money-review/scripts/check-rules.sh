@@ -141,7 +141,7 @@ check secret-log go 'slog\.[A-Za-z]+\(.*(DatabaseURL|DATABASE_URL|[Pp]assword|PA
   'log 不可記密碼、token、API key、完整的 DATABASE_URL'
 
 # 6. 只有後端呼叫外部 API
-check frontend-external-api ts "(fetch|axios(\.[a-z]+)?)\(\s*[\"'\`]https?://|er-api\.com|twse\.com\.tw|rate\.bot\.com\.tw|alphavantage|finnhub|VITE_[A-Z0-9_]*(KEY|TOKEN|SECRET)" \
+check frontend-external-api ts "(fetch|axios(\.[a-z]+)?)\(\s*[\"'\`]https?://|er-api\.com|twse\.com\.tw|rate\.bot\.com\.tw|cbc\.gov\.tw|alphavantage|finnhub|VITE_[A-Z0-9_]*(KEY|TOKEN|SECRET)" \
   '前端只呼叫自己的 /api；外部資料來源與 API key 只放在後端（RateProvider）'
 
 # 7. 資產資料屬於使用者

@@ -16,3 +16,4 @@ export async function own() {
 }
 
 const title = import.meta.env.VITE_APP_TITLE
+const CBC = 'cpx.cbc.gov.tw/api/OpenData/FTDOpenData_Day'
