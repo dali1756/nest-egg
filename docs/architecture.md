@@ -19,7 +19,7 @@
 | ---- | ---- | ------------ |
 | 會員 | 註冊、登入、session、鎖定、忘記與變更密碼 | 登入後的首頁 |
 | 1 基礎架構 | `/api/` 預設需要登入、統一錯誤處理、request ID、panic 處理、「資料屬於使用者」規則與檢查 | 每個回應都有 `X-Request-ID` |
-| 2 幣別與每日匯率 | `currencies`、`RateProvider`、每天抓一次存進 `rate_snapshots` | 最新匯率 API |
+| 2 幣別與每日匯率 | `currencies`、央行收盤匯率（2008 年起的歷史）、每天更新存進 `rate_snapshots`、週末與假日往回找 | 沒有畫面；登入後開 `/api/rates?base=USD&quote=TWD` 看到最近一個營業日的匯率 |
 | 3 現金與換匯 | 存入、提領、換匯 | 總資產頁第一版：現金區（各幣別、外幣均價與損益）與台幣總額 |
 | 4 台股 | 買進、賣出、每日收盤價，買賣連動台幣現金 | 股票區：市值、均價、損益 |
 | 5 美股 | 台幣交割、每日收盤價（資料來源待查） | 美股加入股票區，損益含匯差 |
@@ -44,7 +44,8 @@
 | 名詞                       | 意思                                       | 來源                 |
 | -------------------------- | ------------------------------------------ | -------------------- |
 | 成交匯率 `trade_rate`      | 銀行實際換給你的匯率（牌告賣出價）         | 使用者從交易明細輸入 |
-| 市場參考匯率 `market_rate` | API 給的中間價                             | 系統自動帶入         |
+| 市場參考匯率 `market_rate` | 中央銀行公布的新臺幣/美元銀行間收盤匯率；週末、假日用之前最近一個營業日的 | 系統依交易日帶入     |
+| 匯率日期 `rate_date`       | 市場參考匯率實際是哪一天的，可能早於交易日 | 系統帶入             |
 | 匯差                       | 成交匯率和市場匯率的差距，即銀行賺走的部分 | 計算                 |
 | 成本                       | 換匯時付出的台幣（含手續費），之後固定不變 | 交易紀錄             |
 | 市值                       | 持有外幣 × 今日市場匯率，每天變動          | 計算                 |
@@ -59,7 +60,7 @@
 | Migration | goose                               | 管理資料表版本                                                                                                                                                              |
 | 金額      | `github.com/shopspring/decimal`     | 避免浮點數誤差                                                                                                                                                              |
 | Log       | `log/slog`                          | 標準函式庫結構化 log                                                                                                                                                        |
-| 排程      | goroutine + `time.Ticker`           | 每天抓一次匯率，不需要 cron 套件                                                                                                                                            |
+| 排程      | goroutine + `time.Timer`            | 每天台北 17:30 抓匯率，還沒公布就每小時重試到 22:30（第 7 節），不需要 cron 套件                                                                                            |
 | 測試      | `testing` + `net/http/httptest`     | 標準函式庫                                                                                                                                                                  |
 | 前端建置  | Vite + React + TypeScript（pnpm）   | 登入後使用的系統不需要 SEO，SPA 就夠；Next.js 自帶伺服器會和 Go 重疊                                                                                                        |
 | 樣式      | Tailwind CSS（`@tailwindcss/vite`） | 顏色、圓角、陰影、字級定義在 `src/index.css` 的 `@theme`，元件直接寫 utility class；重複的樣式抽成元件（`Button`、`TextLink`、`Notice`、`PageMessage`），不另外寫 CSS class |
@@ -67,22 +68,24 @@
 | 表單      | React Hook Form + Zod               | 表單驗證                                                                                                                                                                    |
 | 圖表      | Recharts                            | 每月成本圖、匯率走勢圖                                                                                                                                                      |
 
-sqlc 與 decimal 的整合：在 `sqlc.yaml` 用 override 把 `pg_catalog.numeric` 對應到 `github.com/shopspring/decimal.Decimal`；pgx 可搭配 `github.com/jackc/pgx-shopspring-decimal` 註冊型別（實作時確認）。
+sqlc 的型別對應（`sqlc.yaml`）：`numeric` → `decimal.Decimal`、`date` → `time.Time`。pgx 透過 `decimal.Decimal` 本身的 `sql.Scanner`／`driver.Valuer` 就能讀寫（含陣列），不需要 `pgx-shopspring-decimal`。`DATE` 讀出來是 UTC 午夜，要用 `taipei.FromDBDate` 換成台北日期。
 
 ## 4. 目錄結構
 
 ```
 nest-egg/
 ├── backend/
-│   ├── cmd/server/main.go     # 程式進入點：讀設定、連 DB、註冊路徑、啟動排程
+│   ├── cmd/server/main.go     # 程式進入點：讀設定、連 DB、組裝 handler、middleware、啟動 HTTP 與背景工作
+│   ├── cmd/server/routes.go   # 所有 API 路徑：public（不需登入）與 protected（需要登入）
 │   ├── internal/
 │   │   ├── auth/              # 會員：註冊、登入、session、鎖定、忘記密碼、RequireUser；authtest/ 是測試用的記憶體 Store
-│   │   ├── currency/          # 幣別
+│   │   ├── currency/          # 幣別：currencies 表、GET /api/currencies
 │   │   ├── fx/                # 換匯交易：handler.go / service.go / repository.go
-│   │   ├── rate/              # 匯率：RateProvider interface、排程、rate_snapshots
+│   │   ├── rate/              # 匯率：RateProvider、央行 provider、每日排程（Updater）、rate_snapshots、GET /api/rates
 │   │   ├── stock/             # 第 4、5 步：台股、美股
 │   │   └── platform/          # config、db（連線、migration、sqlc 產生的 dbgen）、health（健康檢查）、middleware（access log、panic）、
-│   │                          # apperr（錯誤型別）、httpx（統一錯誤處理、JSON 讀寫）、requestid（request ID、帶 request_id 的 log）、ratelimit
+│   │                          # apperr（錯誤型別）、httpx（統一錯誤處理、JSON 讀寫）、requestid（request ID、帶 request_id 的 log）、ratelimit、
+│   │                          # taipei（台北日期）
 │   ├── db/
 │   │   ├── migrations/        # goose
 │   │   └── queries/           # sqlc 的 .sql
@@ -116,17 +119,18 @@ nest-egg/
 - **查詢：** 每條 sqlc 查詢都用 `user_id` 篩選，包括列表與彙總；查單筆、修改、刪除用 `WHERE id = $1 AND user_id = $2`，影響 0 列時回 `apperr.ErrNotFound`。
 - **別人的資料和不存在一樣回 404**，不回 403，不讓別人知道這個 id 存在。
 - **回應不含 `user_id`**，也不帶出其他使用者的資料。
-- **路徑：** 業務 API 註冊在受保護的 mux 上，`/api/` 底下除了公開路徑（health、註冊、登入、登出、忘記與重設密碼）一律先經過 `RequireUser`（`cmd/server/main.go` 的 `newHandler`）。
+- **路徑：** 所有 API 列在 `cmd/server/routes.go`。業務 API 寫在 `protected` 區塊；`/api/` 底下除了公開路徑（health、註冊、登入、登出、忘記與重設密碼）一律先經過 `RequireUser`（`newRouter`）。`main_test.go` 的路徑表測試確認每條需要登入的路徑沒登入時回 401。
 - **測試：** 每個使用者資料 API 都有 A/B 隔離測試：A 建立的資料，B 的列表看不到；B 用 A 的 id 查、改、刪都得到 404，A 的資料不變。
 - **自動檢查：** `nest-egg-money-review` 的 `user-id-from-request` 規則抓「從請求讀 `user_id`」；查詢有沒有篩選要人工檢查（`references/judgement.md` 第 10 項）。
 
-以下是草稿，實際欄位在各步驟的 change 決定。
+`currencies`、`rate_snapshots` 已定案（第 2 步，`backend/db/migrations/00005`、`00006`）；`fx_trades` 是草稿，欄位在第 3 步的 change 決定。
 
 ```sql
+-- 幣別，所有使用者共用。新增幣別用新的 migration 插入資料。初始資料：TWD（新臺幣，2）、USD（美元，2）
 CREATE TABLE currencies (
-    code       CHAR(3)  PRIMARY KEY,   -- ISO 4217：TWD、USD、JPY
+    code       CHAR(3)  PRIMARY KEY CHECK (code ~ '^[A-Z]{3}$'),  -- ISO 4217
     name       TEXT     NOT NULL,
-    minor_unit SMALLINT NOT NULL       -- 小數位數：USD 2、JPY 0
+    minor_unit SMALLINT NOT NULL  -- ISO 4217 的小數位數
 );
 
 -- 換匯交易：付出 pay 換到 buy。買美金：buy=USD、pay=TWD；賣回台幣則相反
@@ -140,23 +144,38 @@ CREATE TABLE fx_trades (
     pay_amount   NUMERIC(20,4) NOT NULL CHECK (pay_amount > 0),
     fee          NUMERIC(20,4) NOT NULL DEFAULT 0 CHECK (fee >= 0),  -- 以 pay_currency 計
     trade_rate   NUMERIC(20,8) NOT NULL,  -- 銀行實際成交匯率（使用者輸入，1 外幣 = X 台幣）
-    market_rate  NUMERIC(20,8),           -- 交易日的市場參考匯率，存值不用 FK；查不到為 NULL
+    market_rate      NUMERIC(20,8),       -- 交易日的市場參考匯率，存值不用 FK；往回 10 天都查不到為 NULL
+    market_rate_date DATE,                -- market_rate 實際的日期（週末、假日會早於交易日）
     note         TEXT,
     created_at   TIMESTAMPTZ   NOT NULL DEFAULT now(),
     CHECK (buy_currency <> pay_currency)
 );
 
--- 每日市場匯率（排程每天抓一次）
+-- 每日市場參考匯率，所有使用者共用。只存來源真正公布的日子，週末與假日沒有資料列
 CREATE TABLE rate_snapshots (
     base       CHAR(3)       NOT NULL REFERENCES currencies(code),
     quote      CHAR(3)       NOT NULL REFERENCES currencies(code),
-    rate_date  DATE          NOT NULL,   -- 台北時區的日期
-    rate       NUMERIC(20,8) NOT NULL CHECK (rate > 0),
-    source     TEXT          NOT NULL,
-    fetched_at TIMESTAMPTZ   NOT NULL DEFAULT now(),
-    PRIMARY KEY (base, quote, rate_date)
+    rate_date  DATE          NOT NULL,  -- 匯率本身的台北日期，不是抓取日期
+    rate       NUMERIC(20,8) NOT NULL CHECK (rate > 0),  -- 1 base = rate 個 quote
+    source     TEXT          NOT NULL,  -- 資料來源代碼，例如 cbc
+    fetched_at TIMESTAMPTZ   NOT NULL DEFAULT now(),  -- 最後一次新增或修正的時間
+    PRIMARY KEY (base, quote, rate_date),
+    CHECK (base <> quote)
 );
 ```
+
+### 週末與假日的匯率
+
+官方參考匯率只在營業日公布。某一天的市場參考匯率取**該日當天或以前最近一筆**，最多往回 10 天（春節連假約 9 天），並記下實際的匯率日期；再找不到才是 NULL。不用該日之後的匯率：交易當下不可能知道之後的價格。這是 CLAUDE.md 設計規則 3，查詢在 `db/queries/rates.sql` 的 `RateOnOrBefore`：
+
+```sql
+SELECT rate_date, rate, source FROM rate_snapshots
+WHERE base = $1 AND quote = $2 AND rate_date <= $3 AND rate_date >= $3 - 10
+ORDER BY rate_date DESC LIMIT 1;
+```
+
+- 換匯：`market_rate` 與 `market_rate_date` 都存下來。週末透過銀行 app 換匯，用的是銀行自訂的非營業時間報價，匯差通常比平日大，這是實際多付的成本。
+- 總資產頁：用今天（台北）查到的匯率折合台幣，畫面標出匯率日期與資料來源。
 
 ### 每月加權平均換匯成本
 
@@ -196,18 +215,18 @@ JSON 中的金額與匯率一律用字串。
 | `POST /api/auth/password/forgot`                                          | 申請重設密碼（email），不論 email 有沒有註冊都回 202；還沒設定寄信時回 503                                                                   | 會員 |
 | `POST /api/auth/password/reset`                                           | 重設密碼（token、password、confirm_password），成功回 204；token 無效或過期 400、欄位錯誤 422                                                | 會員 |
 | `POST /api/auth/password/change`                                          | 變更密碼（current_password、password、confirm_password），需登入；成功回 204，其他裝置全部登出；目前密碼錯誤 403、帳號鎖定 423、欄位錯誤 422 | 會員 |
-| `GET /api/currencies`                                                     | 幣別清單                                                                                                                                     | 2    |
+| `GET /api/currencies`                                                     | 幣別清單 `{"currencies":[{"code","name","minor_unit"}]}`，依代碼排序                                                                        | 2    |
 | `GET /api/fx-trades`                                                      | 換匯交易列表（可用 `from`、`to` 篩選日期）                                                                                                   | 3    |
 | `POST /api/fx-trades`                                                     | 新增換匯交易                                                                                                                                 | 3    |
 | `GET /api/fx-trades/{id}`                                                 | 單筆交易                                                                                                                                     | 3    |
 | `PUT /api/fx-trades/{id}`                                                 | 修改交易                                                                                                                                     | 3    |
 | `DELETE /api/fx-trades/{id}`                                              | 刪除交易                                                                                                                                     | 3    |
 | `GET /api/fx-trades/monthly-cost?buy=USD&pay=TWD`                         | 每月加權平均成本                                                                                                                             | 3    |
-| `GET /api/rates/latest?base=USD&quote=TWD`                                | 最新市場匯率                                                                                                                                 | 2    |
-| `GET /api/rates/history?base=USD&quote=TWD&from=2026-01-01&to=2026-10-31` | 匯率歷史                                                                                                                                     | 2    |
+| `GET /api/rates?base=USD&quote=TWD&date=2026-10-17`                       | 某一天的市場參考匯率（第 5 節「週末與假日的匯率」），回傳 `rate`、`rate_date`、`source`；`date` 不填是台北的今天；查不到 404，幣別不存在、日期格式錯誤或在未來 422 | 2    |
+| `GET /api/rates/history?base=USD&quote=TWD&from=2026-01-01&to=2026-10-31` | 匯率歷史（走勢圖）                                                                                                                           | 之後 |
 | `GET /api/portfolio/summary`                                              | 成本、市值、未實現損益（第 3 步先做現金，第 4、5 步加入股票）                                                                                | 3    |
 
-「階段」對應第 1 節「開發階段」的步驟。除了 health 與會員的公開路徑，所有 API 都需要登入，而且只回傳自己的資料（第 5 節「資料屬於使用者」）。錯誤回應格式見第 8 節。
+「階段」對應第 1 節「開發階段」的步驟。幣別與匯率是所有使用者共用的資料，仍然需要登入，回應不含 `user_id`。除了 health 與會員的公開路徑，所有 API 都需要登入，而且只回傳自己的資料（第 5 節「資料屬於使用者」）。錯誤回應格式見第 8 節。
 
 `POST /api/fx-trades` 請求範例：
 
@@ -226,24 +245,35 @@ JSON 中的金額與匯率一律用字串。
 
 ## 7. 外部資料來源
 
-| 用途 | 來源                                                           | 狀況                                                                                                                                                 |
-| ---- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 匯率 | `https://open.er-api.com/v6/latest/USD`                        | 免 API key、含 TWD、每天更新一次、給的是中間價。免費端點只提供最新值（歷史匯率屬付費方案，實作前確認）。條款：https://www.exchangerate-api.com/terms |
-| 匯率 | 台灣銀行牌告匯率 CSV `https://rate.bot.com.tw/xrt/flcsv/0/day` | 回傳機器人驗證頁，伺服器程式抓不到                                                                                                                   |
-| 台股 | `https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL`  | 免 key，每日收盤資料。日期是民國格式（`1151006` = 2026-10-06），數值全是字串，要自行轉換                                                             |
-| 美股 | Alpha Vantage、Finnhub 等                                      | 要申請 API key，免費方案有呼叫次數限制                                                                                                               |
+| 用途 | 來源 | 狀況 |
+| ---- | ---- | ---- |
+| 匯率（**使用中**） | 中央銀行「新臺幣/美元 銀行間收盤匯率」`https://cpx.cbc.gov.tw/api/OpenData/FTDOpenData_Day` | 免 key，一次回傳 2008-01-02 至今全部（約 190 KB），格式 `[{"日期":"20261019","NTD_USD":"32.445"}]`。只有 USD。工作日 16:00～17:00 公布當日收盤；週末、國定假日沒有資料，補班的週六有。授權：政府資料開放授權條款第 1 版，**顯示匯率的畫面要註明「資料來源：中央銀行」** |
+| 匯率（備案） | FinMind `TaiwanExchangeRate` | 2006 年起、19 種幣別的臺銀牌告買賣價，免 token 每小時 300 次。免費方案限非商業用途、要標示 FinMind；有幾筆 -1 的錯誤值。週日 00:00～03:00 維護 |
+| 匯率（備案） | Frankfurter v2 `api.frankfurter.dev/v2/rates` | TWD 1981 年起、可商用。預設值是多個央行混合計算，週末的值是推算的；`providers=AMCM` 只回實際公布的日子 |
+| 匯率（不用） | open.er-api.com | 歷史資料要付費 |
+| 匯率（不用） | 臺灣銀行牌告匯率 `rate.bot.com.tw` | 伺服器程式拿到的是機器人驗證頁 |
+| 匯率（不用） | fawazahmed0 currency-api | 歷史只到 2024-03，有缺日，來源不明 |
+| 匯率（不用） | FRED `DEXTAUS` | 條款禁止儲存與商用；每週公布，落後 3～10 天 |
+| 台股 | `https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL` | 免 key，每日收盤資料。日期是民國格式（`1151006` = 2026-10-06），數值全是字串，要自行轉換。FinMind `TaiwanStockPrice` 也是候選 |
+| 美股 | FinMind `USStockPrice`、Alpha Vantage、Finnhub 等 | 第 5 步再選。Alpha Vantage、Finnhub 要申請 API key，免費方案有呼叫次數限制 |
+
+以上是 2026-10-20 用 curl 實測與閱讀條款的結果。
 
 ### RateProvider
 
 ```go
 type RateProvider interface {
-    Latest(ctx context.Context, base string) (map[string]decimal.Decimal, error)
+    Name() string                               // 存進 rate_snapshots.source，例如 "cbc"
+    Fetch(ctx context.Context) ([]Rate, error)  // 這個來源目前能提供的所有匯率
 }
 ```
 
-- 用 interface 包住資料來源：換來源只要換實作，測試時可以放假的資料來源。
-- 背景 goroutine 用 `time.Ticker` 每天抓一次，寫進 `rate_snapshots`。
-- 新增換匯交易時，從 `rate_snapshots` 查交易日（台北時區）的匯率帶入 `market_rate`；查不到就留 NULL。
+- 用 interface 包住資料來源：換來源只要換實作，測試時用假的資料來源，不打真的 API。
+- 每次都取回全部資料：伺服器關機幾天、某次抓取失敗、央行修正過去的數值，下一次成功時都會自動補上或更新。
+- 整批驗證後才寫入：資料是空的、日期重複或在未來、數值 ≤ 0、格式不對時整批不寫，已存的資料不動。寫入是單一 statement，新的日期新增、數值變了才更新。
+- 背景工作 `rate.Updater`：伺服器啟動時抓一次，之後每天台北 17:30；失敗或還沒有今天的匯率，每小時重試到 22:30。週末與假日當天的匯率不會出現，會一路重試到 22:30，可以接受。
+- 關機順序（`cmd/server/main.go` 的 `runServer`）：先停 HTTP，再取消背景工作並等它結束，最後才關資料庫連線。
+- 新增換匯交易時，用第 5 節「週末與假日的匯率」的查詢帶入 `market_rate` 與 `market_rate_date`。
 
 ## 8. 錯誤處理與 log
 
@@ -260,7 +290,7 @@ type RateProvider interface {
 
 ### HTTP 層
 
-都已完成。middleware 由外到內：`requestid` → `AccessLog` → `Recover` → `SecurityHeaders` → `CrossOriginProtection` → `MaxBytesHandler` → mux（`cmd/server/main.go` 的 `newHandler`）。
+都已完成。middleware 由外到內：`requestid` → `AccessLog` → `Recover` → `SecurityHeaders` → `CrossOriginProtection` → `MaxBytesHandler` → mux（`cmd/server/main.go` 的 `withMiddleware`；路徑在 `cmd/server/routes.go`）。
 
 | 項目           | 做法                                                                                                                                                                                                                                                                          |
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -285,8 +315,8 @@ type RateProvider interface {
 
 - **開發：** `docker-compose up` 一次啟動 PostgreSQL（本機 `localhost:5433`，TZ=Asia/Taipei）、Go 後端（`localhost:8080`，air 熱重載）與 Vite 開發伺服器（`localhost:5173`）；Vite 用 proxy 把 `/api` 轉到後端，不用處理 CORS。啟動與驗證步驟見 README。
 - **正式環境：** 可用 `embed` 把前端 build 出來的檔案包進 Go 執行檔，只部署一個檔案。
-- **登入：** 自己實作在 `internal/auth`，不用第三方會員套件，回應一律 JSON。跨站的 POST/PUT/PATCH/DELETE 由 `http.CrossOriginProtection` 擋下。業務 API 註冊在受保護的 mux 上，`/api/` 底下的非公開路徑一律先經過 `RequireUser`；handler 只用 `auth.CurrentUser(ctx)` 取得使用者（第 5 節「資料屬於使用者」）。安全強度以 OWASP ASVS Level 2 為目標。
-  - **次數限制：** 註冊、登入、忘記密碼、重設密碼、變更密碼這些要輸入 email 或密碼的端點，每個 IP 連續 10 次，之後每 6 秒補 1 次，超過回 429 和 `Retry-After`（`platform/ratelimit`、`cmd/server/main.go` 的 `newAuthHandler`）。IPv6 以 /64 為單位。預設只看連線本身的位址，不採用 `X-Forwarded-For`（使用者可以自己加這個 header）；放在反向代理後面時，把代理的 IP 或 CIDR 設進 `TRUSTED_PROXIES`，才會從 header 由右往左跳過代理取出使用者 IP。開發環境經過 Vite proxy，所有請求共用同一個額度。計數存在記憶體，重啟後歸零；之後如果跑多台後端，要改用共用的儲存或在反向代理做限制。
+- **登入：** 自己實作在 `internal/auth`，不用第三方會員套件，回應一律 JSON。跨站的 POST/PUT/PATCH/DELETE 由 `http.CrossOriginProtection` 擋下。業務 API 寫在 `cmd/server/routes.go` 的 `protected` 區塊，`/api/` 底下的非公開路徑一律先經過 `RequireUser`；handler 只用 `auth.CurrentUser(ctx)` 取得使用者（第 5 節「資料屬於使用者」）。安全強度以 OWASP ASVS Level 2 為目標。
+  - **次數限制：** 註冊、登入、忘記密碼、重設密碼、變更密碼這些要輸入 email 或密碼的端點，每個 IP 連續 10 次，之後每 6 秒補 1 次，超過回 429 和 `Retry-After`（`platform/ratelimit`；在 `cmd/server/routes.go` 用 `h.limit(...)` 套用）。IPv6 以 /64 為單位。預設只看連線本身的位址，不採用 `X-Forwarded-For`（使用者可以自己加這個 header）；放在反向代理後面時，把代理的 IP 或 CIDR 設進 `TRUSTED_PROXIES`，才會從 header 由右往左跳過代理取出使用者 IP。開發環境經過 Vite proxy，所有請求共用同一個額度。計數存在記憶體，重啟後歸零；之後如果跑多台後端，要改用共用的儲存或在反向代理做限制。
   - **密碼：** 只存 bcrypt 雜湊（cost 12）；舊的雜湊 cost 比較低時，使用者下次登入成功會自動換成 cost 12。規則：8～64 個字元，只能用英文字母、數字、符號（可列印 ASCII，不含空白），大寫、小寫、數字、符號各至少一個。前後端規則一致：`internal/auth/password.go`、`frontend/src/validation/password.ts`，兩邊的測試案例也一致。
   - **Session：** 存在 `sessions` 表，cookie 只放 128 bits 的隨機 token（`crypto/rand.Text()`），資料庫只存 token 的 SHA-256。cookie 是 HttpOnly、`SameSite=Lax`；`COOKIE_SECURE=true` 時加 Secure，名稱改成 `__Host-nest_egg_session`，子網域無法塞同名 cookie 進來。24 小時沒有需要登入的請求就失效；不論有沒有在用，登入滿 7 天一定失效。`last_seen_at` 最多每分鐘更新一次。登出會刪掉資料庫裡的 session，複製出去的 cookie 也跟著失效。
   - **鎖定：** 同一帳號連續 3 次密碼錯誤，`users.locked` 設成 1，之後登入一律回 423。只能手動解鎖：`UPDATE users SET locked = 0 WHERE email = '...';`。登入成功會把失敗次數歸零。鎖定只擋登入，不會讓已經登入的 session 失效。
@@ -310,7 +340,7 @@ type RateProvider interface {
 
 ### 其他
 
-- 定期清掉過期的 `sessions` 和 `password_reset_tokens`：目前只在該使用者登入時清掉他自己過期的 session，沒有再登入的使用者會留下資料列（已經無法使用，只是占空間）。可以和每天抓匯率的背景 goroutine 一起做。
+- 定期清掉過期的 `sessions` 和 `password_reset_tokens`：目前只在該使用者登入時清掉他自己過期的 session，沒有再登入的使用者會留下資料列（已經無法使用，只是占空間）。可以做成和 `rate.Updater` 一樣的背景工作，交給 `runServer` 啟動與關閉。
 - 正式環境用 embed 提供前端頁面時，HTML 要另外設定 CSP（目前的 CSP 是給 JSON API 用的）。
 - 正式環境的資料庫：後端改用只有必要權限的帳號（不要用 `POSTGRES_USER` 那個超級使用者），連線改成 `sslmode=verify-full`。
 - 依賴弱點掃描：Go 用 `govulncheck ./...`（`brew install govulncheck`），前端用 `pnpm audit`，每次升級套件後跑一次。

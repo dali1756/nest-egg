@@ -13,19 +13,19 @@
 ## 設計規則
 
 1. **金額與匯率不用 float。** Go 用 `decimal.Decimal`、DB 用 `NUMERIC`、JSON 用字串（`"amount": "32420.00"`）。
-2. **每筆換匯同時存兩種匯率。** `trade_rate` 是銀行實際成交匯率（使用者輸入），`market_rate` 是當日 API 參考匯率（系統帶入）。`market_rate` 存數值，不用外鍵指向共用的匯率紀錄。
-3. **查不到某日匯率時 `market_rate` 留 NULL**，不得用最新匯率或預設值頂替。
-4. **日期一律以 `Asia/Taipei` 計算。** Go 用 `time.LoadLocation("Asia/Taipei")`，禁止用 `time.Now().Truncate(24*time.Hour)` 取今天（那是 UTC 午夜）；SQL 用 `AT TIME ZONE 'Asia/Taipei'`；`main` 加 `import _ "time/tzdata"`。
+2. **每筆換匯同時存兩種匯率。** `trade_rate` 是銀行實際成交匯率（使用者輸入），`market_rate` 是交易日的市場參考匯率（系統依規則 3 帶入）。`market_rate` 存數值，不用外鍵指向共用的匯率紀錄。
+3. **某一天的匯率取當天或以前最近一筆，並記下實際的匯率日期。** 週末、國定假日沒有公布匯率，最多往回找 10 天，再找不到才留 NULL（`market_rate`）。不得用該日之後的匯率或預設值頂替。一律透過 `internal/rate` 的同一條查詢（`RateOnOrBefore`），不另外寫。
+4. **日期一律以 `Asia/Taipei` 計算。** Go 用 `internal/platform/taipei`（日期是台北時區的午夜，從資料庫讀出的 `DATE` 先經過 `taipei.FromDBDate`），禁止用 `time.Now().Truncate(24*time.Hour)` 取今天（那是 UTC 午夜）；SQL 用 `AT TIME ZONE 'Asia/Taipei'`；`main` 加 `import _ "time/tzdata"`。
 5. **幣別是資料。** 用 `currencies` 表加外鍵，不用 CHECK 或程式碼寫死幣別清單。
 6. **匯率報價慣例：1 外幣 = X 台幣**（同銀行牌告）。v1 每筆換匯有一邊必須是 TWD。
 7. **平均成本 = SUM(付出 + 手續費) ÷ SUM(取得)**，不要把各筆匯率相加再平均。
 8. **只有後端呼叫外部 API。** 資料來源包成 `RateProvider` interface，背景 goroutine 每天抓一次存進 `rate_snapshots`；前端只呼叫自己的 `/api`。
-9. **資產資料屬於使用者。** 使用者只從 `auth.CurrentUser(ctx)` 取得，不從網址、query、body、header 讀 `user_id`。使用者資料表都有 `user_id`，每條查詢都用它篩選，查單筆、修改、刪除用 `id AND user_id`。別人的資料和不存在一樣回 404，回應不含 `user_id`。每個使用者資料 API 都要有「A 讀、改、刪不到 B」的測試。業務邏輯 API 註冊在受保護的 mux 上（`/api/` 預設需要登入）。
+9. **資產資料屬於使用者。** 使用者只從 `auth.CurrentUser(ctx)` 取得，不從網址、query、body、header 讀 `user_id`。使用者資料表都有 `user_id`，每條查詢都用它篩選，查單筆、修改、刪除用 `id AND user_id`。別人的資料和不存在一樣回 404，回應不含 `user_id`。每個使用者資料 API 都要有「A 讀、改、刪不到 B」的測試。所有 API 路徑列在 `cmd/server/routes.go`，業務 API 寫在 `protected` 區塊（`/api/` 預設需要登入）。
 
 ## 程式碼慣例
 
 - `backend/internal/` 依功能分 package（`currency`、`fx`、`rate`、`stock`），每個 package 內放 `handler.go`、`service.go`、`repository.go`；共用的設定、DB 連線、middleware 放 `platform/`。
-- 路徑用 Go 1.22+ 寫法：`mux.HandleFunc("GET /api/fx-trades/{id}", h.get)`。
+- 路徑統一寫在 `cmd/server/routes.go`，用 Go 1.22+ 寫法：`protected.Handle("GET /api/fx-trades/{id}", httpx.Handler(h.fx.Get))`。各 package 不自己註冊路徑，handler 方法大寫開頭。
 - 錯誤往上傳時用 `fmt.Errorf("...: %w", err)` 包裝。
 - 錯誤只在最上層記 log 一次（`main()`、HTTP 統一錯誤處理、背景工作的最上層），中間層只包裝後回傳。
 - log 用 `log/slog`：訊息用固定字串、變數放欄位；不記密碼、token、完整的 `DATABASE_URL`。request ID、access log、錯誤回應格式見 [docs/architecture.md](docs/architecture.md) 第 8 節。

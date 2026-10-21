@@ -60,6 +60,8 @@ bash .claude/skills/nest-egg-verify/scripts/verify-stack.sh
 - 「忘記密碼」要等接上 SMTP 才開放，目前畫面會顯示尚未開放（見 [docs/architecture.md](docs/architecture.md) 第 10 節）。
 - 會員功能是自己實作的（`backend/internal/auth`），設計見 [docs/architecture.md](docs/architecture.md)。API：`POST /api/auth/register`、`POST /api/auth/login`、`POST /api/auth/logout`、`GET /api/auth/me`、`POST /api/auth/password/forgot`、`POST /api/auth/password/reset`、`POST /api/auth/password/change`。`/api/health` 不需要登入。
 - 跨站的 POST 會被擋下（回 403，Go 內建的 `http.CrossOriginProtection`）。
+- 幣別與匯率（`backend/internal/currency`、`backend/internal/rate`）：`GET /api/currencies`、`GET /api/rates?base=USD&quote=TWD&date=YYYY-MM-DD`，需要登入。登入後直接在瀏覽器開 `http://localhost:5173/api/rates?base=USD&quote=TWD` 就看得到最近一個營業日的匯率。
+- 後端啟動時與每天台北 17:30 從中央銀行抓 USD/TWD 收盤匯率（第一次啟動會補進 2008 年起的歷史，約 4,670 筆），需要能連外網；抓取結果在 backend log 的 `rates updated`。
 
 ## 資料庫 migration 與 sqlc
 
