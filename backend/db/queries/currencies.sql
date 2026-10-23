@@ -5,3 +5,8 @@ ORDER BY code;
 
 -- name: CurrencyExists :one
 SELECT EXISTS (SELECT 1 FROM currencies WHERE code = $1);
+
+-- name: GetCurrency :one
+SELECT code, name, minor_unit
+FROM currencies
+WHERE code = $1;

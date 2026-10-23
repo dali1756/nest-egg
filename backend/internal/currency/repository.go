@@ -2,8 +2,12 @@ package currency
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
+
+	"nest-egg/backend/internal/platform/apperr"
 	"nest-egg/backend/internal/platform/db/dbgen"
 )
 
@@ -33,4 +37,15 @@ func (r *Repository) Exists(ctx context.Context, code string) (bool, error) {
 		return false, fmt.Errorf("check currency %q: %w", code, err)
 	}
 	return ok, nil
+}
+
+func (r *Repository) Get(ctx context.Context, code string) (Currency, error) {
+	row, err := r.q.GetCurrency(ctx, code)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Currency{}, fmt.Errorf("currency %q: %w", code, apperr.ErrNotFound)
+	}
+	if err != nil {
+		return Currency{}, fmt.Errorf("select currency %q: %w", code, err)
+	}
+	return Currency{Code: row.Code, Name: row.Name, MinorUnit: int(row.MinorUnit)}, nil
 }

@@ -10,10 +10,32 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+type Category struct {
+	ID        int64
+	UserID    int64
+	Kind      string
+	Name      string
+	Position  int16
+	CreatedAt time.Time
+}
+
 type Currency struct {
 	Code      string
 	Name      string
 	MinorUnit int16
+}
+
+type LedgerEntry struct {
+	ID             int64
+	UserID         int64
+	OccurredOn     time.Time
+	CategoryID     int64
+	Currency       string
+	Amount         decimal.Decimal
+	MarketRate     *decimal.Decimal
+	MarketRateDate *time.Time
+	Note           string
+	CreatedAt      time.Time
 }
 
 type PasswordResetToken struct {

@@ -5,6 +5,7 @@ import (
 
 	"nest-egg/backend/internal/auth"
 	"nest-egg/backend/internal/currency"
+	"nest-egg/backend/internal/ledger"
 	"nest-egg/backend/internal/platform/health"
 	"nest-egg/backend/internal/platform/httpx"
 	"nest-egg/backend/internal/rate"
@@ -15,6 +16,7 @@ type handlers struct {
 	auth      *auth.Handler
 	currency  *currency.Handler
 	rate      *rate.Handler
+	ledger    *ledger.Handler
 	rateLimit func(http.Handler) http.Handler
 }
 
@@ -34,6 +36,12 @@ func addRoutes(public, protected *http.ServeMux, h handlers) {
 	protected.Handle("POST /api/auth/password/change", h.limit(h.auth.ChangePassword))
 	protected.Handle("GET /api/currencies", httpx.Handler(h.currency.List))
 	protected.Handle("GET /api/rates", httpx.Handler(h.rate.Get))
+	protected.Handle("GET /api/categories", httpx.Handler(h.ledger.Categories))
+	protected.Handle("GET /api/ledger-entries", httpx.Handler(h.ledger.ListEntries))
+	protected.Handle("POST /api/ledger-entries", httpx.Handler(h.ledger.CreateEntry))
+	protected.Handle("GET /api/ledger-entries/{id}", httpx.Handler(h.ledger.GetEntry))
+	protected.Handle("PUT /api/ledger-entries/{id}", httpx.Handler(h.ledger.UpdateEntry))
+	protected.Handle("DELETE /api/ledger-entries/{id}", httpx.Handler(h.ledger.DeleteEntry))
 }
 
 func newRouter(h handlers) (public, protected *http.ServeMux) {

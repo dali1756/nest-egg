@@ -53,9 +53,14 @@ func (h *Handler) RequireUser(next http.Handler) http.Handler {
 		case err != nil:
 			h.internalError(w, r, err)
 		default:
-			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, user)))
+			next.ServeHTTP(w, r.WithContext(WithUser(r.Context(), user)))
 		}
 	})
+}
+
+// WithUser 回傳帶有登入使用者的 context，CurrentUser 從這裡讀
+func WithUser(ctx context.Context, u User) context.Context {
+	return context.WithValue(ctx, ctxKey{}, u)
 }
 
 func CurrentUser(ctx context.Context) (User, bool) {

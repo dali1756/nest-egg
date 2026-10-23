@@ -16,6 +16,7 @@ import (
 	"nest-egg/backend/db/migrations"
 	"nest-egg/backend/internal/auth"
 	"nest-egg/backend/internal/currency"
+	"nest-egg/backend/internal/ledger"
 	"nest-egg/backend/internal/platform/config"
 	"nest-egg/backend/internal/platform/db"
 	"nest-egg/backend/internal/platform/health"
@@ -60,13 +61,16 @@ func run() error {
 		return fmt.Errorf("set up auth: %w", err)
 	}
 	currencies := currency.NewService(currency.NewRepository(pool))
-	rates := rate.NewService(rate.NewRepository(pool), rate.NewCBCProvider(rate.CBCURL), currencies)
+	rateRepo := rate.NewRepository(pool)
+	rates := rate.NewService(rateRepo, rate.NewCBCProvider(rate.CBCURL), currencies)
+	ledgerSvc := ledger.NewService(ledger.NewRepository(pool), currencies, rateRepo)
 
 	h := handlers{
 		health:    health.NewHandler(pool),
 		auth:      auth.NewHandler(authSvc, auth.HandlerConfig{CookieSecure: cfg.CookieSecure}, slog.Default()),
 		currency:  currency.NewHandler(currencies),
 		rate:      rate.NewHandler(rates),
+		ledger:    ledger.NewHandler(ledgerSvc),
 		rateLimit: newRateLimit(cfg),
 	}
 	srv := newServer(cfg.HTTPAddr, newHandler(h, cfg))

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"nest-egg/backend/internal/platform/apperr"
 	"nest-egg/backend/internal/platform/httpx"
 )
 
@@ -25,6 +26,15 @@ func (f fakeStore) Exists(_ context.Context, code string) (bool, error) {
 		}
 	}
 	return false, f.err
+}
+
+func (f fakeStore) Get(_ context.Context, code string) (Currency, error) {
+	for _, c := range f.currencies {
+		if c.Code == code {
+			return c, f.err
+		}
+	}
+	return Currency{}, apperr.ErrNotFound
 }
 
 func serve(store Store) *httptest.ResponseRecorder {

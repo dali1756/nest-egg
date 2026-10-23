@@ -20,6 +20,8 @@ import (
 	"nest-egg/backend/internal/auth"
 	"nest-egg/backend/internal/auth/authtest"
 	"nest-egg/backend/internal/currency"
+	"nest-egg/backend/internal/ledger"
+	"nest-egg/backend/internal/platform/apperr"
 	"nest-egg/backend/internal/platform/config"
 	"nest-egg/backend/internal/platform/health"
 	"nest-egg/backend/internal/platform/ratelimit"
@@ -70,6 +72,7 @@ func newTestHandlers(t *testing.T, cfg config.Config, limit func(http.Handler) h
 		auth:      auth.NewHandler(svc, auth.HandlerConfig{CookieSecure: cfg.CookieSecure}, log),
 		currency:  currency.NewHandler(currencies),
 		rate:      rate.NewHandler(rate.NewService(fakeRateStore{}, nil, currencies)),
+		ledger:    ledger.NewHandler(ledger.NewService(emptyLedgerStore{}, currencies, fakeRateStore{})),
 		rateLimit: limit,
 	}
 }
@@ -405,6 +408,43 @@ func (fakeCurrencyStore) Exists(_ context.Context, code string) (bool, error) {
 	return code == "TWD" || code == "USD", nil
 }
 
+func (f fakeCurrencyStore) Get(ctx context.Context, code string) (currency.Currency, error) {
+	all, _ := f.List(ctx)
+	for _, c := range all {
+		if c.Code == code {
+			return c, nil
+		}
+	}
+	return currency.Currency{}, apperr.ErrNotFound
+}
+
+// emptyLedgerStore 是沒有任何資料的 ledger.Store，只用來確認路徑有接上 handler
+type emptyLedgerStore struct{ ledger.Store }
+
+func (emptyLedgerStore) SeedCategories(context.Context, int64, []ledger.Category) error { return nil }
+
+func (emptyLedgerStore) Categories(context.Context, int64) ([]ledger.Category, error) {
+	return nil, nil
+}
+
+func (emptyLedgerStore) Category(context.Context, int64, int64) (ledger.Category, error) {
+	return ledger.Category{}, apperr.ErrNotFound
+}
+
+func (emptyLedgerStore) Entry(context.Context, int64, int64) (ledger.Entry, error) {
+	return ledger.Entry{}, apperr.ErrNotFound
+}
+
+func (emptyLedgerStore) DeleteEntry(context.Context, int64, int64) error { return apperr.ErrNotFound }
+
+func (emptyLedgerStore) Entries(context.Context, int64, time.Time, time.Time) ([]ledger.Entry, error) {
+	return nil, nil
+}
+
+func (emptyLedgerStore) Totals(context.Context, int64, time.Time, time.Time) ([]ledger.Total, error) {
+	return nil, nil
+}
+
 type fakeRateStore struct{}
 
 func (fakeRateStore) Upsert(context.Context, string, []rate.Rate) (rate.UpsertResult, error) {
@@ -471,18 +511,28 @@ var apiRoutes = []struct {
 	{http.MethodPost, "/api/auth/password/change", false},
 	{http.MethodGet, "/api/currencies", false},
 	{http.MethodGet, "/api/rates?base=USD&quote=TWD", false},
+	{http.MethodGet, "/api/categories", false},
+	{http.MethodGet, "/api/ledger-entries?month=2026-10", false},
+	{http.MethodPost, "/api/ledger-entries", false},
+	{http.MethodGet, "/api/ledger-entries/1", false},
+	{http.MethodPut, "/api/ledger-entries/1", false},
+	{http.MethodDelete, "/api/ledger-entries/1", false},
 }
 
 func TestEveryRouteHasTheRightProtection(t *testing.T) {
 	h := newAppHandler(t, nil, "me@example.com")
 	cookie := loginCookie(t, h)
-	notRouted := func(code int) bool { return code == http.StatusNotFound || code == http.StatusMethodNotAllowed }
+	// 路徑不存在時是 mux 自己回的純文字 404 或 405；我們的 handler 一律回 JSON（例如找不到紀錄的 404）。
+	notRouted := func(rec *httptest.ResponseRecorder) bool {
+		fromMux := strings.HasPrefix(rec.Header().Get("Content-Type"), "text/plain")
+		return fromMux && (rec.Code == http.StatusNotFound || rec.Code == http.StatusMethodNotAllowed)
+	}
 
 	for _, rt := range apiRoutes {
 		name := rt.method + " " + rt.path
 		anon := serve(h, request(rt.method, rt.path, nil))
 		if rt.public {
-			if anon.Code == http.StatusUnauthorized || notRouted(anon.Code) {
+			if anon.Code == http.StatusUnauthorized || notRouted(anon) {
 				t.Errorf("anonymous %s = %d %s, want a public route", name, anon.Code, anon.Body)
 			}
 			continue
@@ -490,7 +540,7 @@ func TestEveryRouteHasTheRightProtection(t *testing.T) {
 		if anon.Code != http.StatusUnauthorized {
 			t.Errorf("anonymous %s = %d, want 401", name, anon.Code)
 		}
-		if authed := serve(h, request(rt.method, rt.path, cookie)); notRouted(authed.Code) {
+		if authed := serve(h, request(rt.method, rt.path, cookie)); notRouted(authed) {
 			t.Errorf("logged-in %s = %d, want the route to exist", name, authed.Code)
 		}
 	}

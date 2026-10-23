@@ -19,3 +19,16 @@ sql:
           # 讀出來是 UTC 午夜，用 taipei.FromDBDate 換成台北日期
           - db_type: date
             go_type: time.Time
+          # 可以是 NULL 的欄位用指標，NULL 就是 nil
+          - db_type: pg_catalog.numeric
+            nullable: true
+            go_type:
+              import: github.com/shopspring/decimal
+              type: Decimal
+              pointer: true
+          - db_type: date
+            nullable: true
+            go_type:
+              import: time
+              type: Time
+              pointer: true

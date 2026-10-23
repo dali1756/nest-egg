@@ -20,6 +20,19 @@ func (q *Queries) CurrencyExists(ctx context.Context, code string) (bool, error)
 	return exists, err
 }
 
+const getCurrency = `-- name: GetCurrency :one
+SELECT code, name, minor_unit
+FROM currencies
+WHERE code = $1
+`
+
+func (q *Queries) GetCurrency(ctx context.Context, code string) (Currency, error) {
+	row := q.db.QueryRow(ctx, getCurrency, code)
+	var i Currency
+	err := row.Scan(&i.Code, &i.Name, &i.MinorUnit)
+	return i, err
+}
+
 const listCurrencies = `-- name: ListCurrencies :many
 SELECT code, name, minor_unit
 FROM currencies
