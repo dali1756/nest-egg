@@ -2,9 +2,11 @@
 
 ## 1. 目標
 
-開放註冊的個人資產總覽：每個人只記錄、只看得到自己的資產。
+開放註冊的複合式記帳：每個人只記錄、只看得到自己的資料。參考「天天記帳」這類 app，在當下就能快速記一筆，再加上資產的成本與損益。
 
-- **記錄每一筆交易：** 現金存入、提領、換匯、買進與賣出股票。持股、均價、餘額都由系統依交易計算。
+- **收支：** 每天記下收入與支出的日期、分類、幣別、金額、備註。分類屬於每個使用者，預設支出有飲食、生活用品、美容美髮、其他，收入有薪水、獎金、股息、其他。
+- **記錄每一筆交易：** 收入、支出、換匯、買進與賣出股票（之後加入基金、黃金）。持股、均價、餘額都由系統依交易計算。買股票不算支出：它在每日列表標示為「股票」，但不計入花費，並更新持股。
+- **不分帳戶：** 現金、銀行、信用卡不分開記，現金只依幣別分開。刷卡的消費在刷卡當下就從該幣別扣掉，所以台幣餘額不會等於某一個銀行帳戶的餘額，但淨資產正確。之後若要加帳戶，可以加欄位，舊資料歸到「未指定」。
 - **資產總覽：**
   - 股票區：像銀行 app 一樣顯示市值、均價（含手續費）、損益。
   - 現金區：依幣別分開顯示；外幣也有均價與損益（從換匯紀錄算出，見下方範例）。
@@ -20,11 +22,15 @@
 | 會員 | 註冊、登入、session、鎖定、忘記與變更密碼 | 登入後的首頁 |
 | 1 基礎架構 | `/api/` 預設需要登入、統一錯誤處理、request ID、panic 處理、「資料屬於使用者」規則與檢查 | 每個回應都有 `X-Request-ID` |
 | 2 幣別與每日匯率 | `currencies`、央行收盤匯率（2008 年起的歷史）、每天更新存進 `rate_snapshots`、週末與假日往回找 | 沒有畫面；登入後開 `/api/rates?base=USD&quote=TWD` 看到最近一個營業日的匯率 |
-| 3 現金與換匯 | 存入、提領、換匯 | 總資產頁第一版：現金區（各幣別、外幣均價與損益）與台幣總額 |
-| 4 台股 | 買進、賣出、每日收盤價，買賣連動台幣現金 | 股票區：市值、均價、損益 |
-| 5 美股 | 台幣交割、每日收盤價（資料來源待查） | 美股加入股票區，損益含匯差 |
+| 3 收支記帳 | 每個使用者的分類、收入與支出（TWD、USD，每筆一個幣別）、外幣帶入市場參考匯率 | 記帳頁成為登入後首頁：依月份列出紀錄與各幣別合計、記一筆、修改、刪除；系統狀態頁移到 `/status` |
+| 4 換匯 | 換匯交易、匯差、每月加權平均成本 | 換匯紀錄與每月成本圖 |
+| 5 總覽 | 各幣別餘額、外幣均價與損益（移動平均）、台幣總額、本月各分類花費 | 總資產頁第一版 |
+| 6 台股 | 買進、賣出、每日收盤價，買賣連動台幣現金；在每日列表標示「股票」 | 股票區：市值、均價、損益 |
+| 7 更多幣別 | 日圓等幣別（新的匯率來源，央行只有美元）、外幣刷卡以台幣扣款（原幣金額 + 扣款幣別，用當天市場匯率換算） | 可以記日圓消費 |
+| 8 美股 | 台幣交割、每日收盤價（資料來源待查） | 美股加入股票區，損益含匯差 |
+| 9 基金與黃金 | 單位數 × 每日價格（基金淨值、黃金存摺牌價） | 基金、黃金加入總覽 |
 
-各步驟的資料表與 API 細節在各自的 OpenSpec change 決定，第 5、6 節是草稿。
+各步驟的資料表與 API 細節在各自的 OpenSpec change 決定，第 5、6 節是草稿。第 3 步之後的順序是 2026-10-23 和使用者討論後定的：收支是每天都會用到的功能，先做；台股排在更多幣別之前，因為使用者常買股票。
 
 ### 範例
 
@@ -47,8 +53,10 @@
 | 市場參考匯率 `market_rate` | 中央銀行公布的新臺幣/美元銀行間收盤匯率；週末、假日用之前最近一個營業日的 | 系統依交易日帶入     |
 | 匯率日期 `rate_date`       | 市場參考匯率實際是哪一天的，可能早於交易日 | 系統帶入             |
 | 匯差                       | 成交匯率和市場匯率的差距，即銀行賺走的部分 | 計算                 |
-| 成本                       | 換匯時付出的台幣（含手續費），之後固定不變 | 交易紀錄             |
+| 成本                       | 換匯時付出的台幣（含手續費），之後固定不變；外幣收入以 `market_rate` 換算 | 交易紀錄             |
 | 市值                       | 持有外幣 × 今日市場匯率，每天變動          | 計算                 |
+| 分類                       | 收支紀錄的類別，分收入（`income`）與支出（`expense`），每個使用者各自一套 | 預設 + 使用者 |
+| 收支紀錄                   | 一筆收入或支出：日期、分類、幣別、金額、備註；收入或支出由分類決定 | 使用者輸入 |
 
 ## 3. 技術選型
 
@@ -80,9 +88,10 @@ nest-egg/
 │   ├── internal/
 │   │   ├── auth/              # 會員：註冊、登入、session、鎖定、忘記密碼、RequireUser；authtest/ 是測試用的記憶體 Store
 │   │   ├── currency/          # 幣別：currencies 表、GET /api/currencies
+│   │   ├── ledger/            # 收支記帳：分類（categories）與收支紀錄（ledger_entries）
 │   │   ├── fx/                # 換匯交易：handler.go / service.go / repository.go
 │   │   ├── rate/              # 匯率：RateProvider、央行 provider、每日排程（Updater）、rate_snapshots、GET /api/rates
-│   │   ├── stock/             # 第 4、5 步：台股、美股
+│   │   ├── stock/             # 第 6、8 步：台股、美股
 │   │   └── platform/          # config、db（連線、migration、sqlc 產生的 dbgen）、health（健康檢查）、middleware（access log、panic）、
 │   │                          # apperr（錯誤型別）、httpx（統一錯誤處理、JSON 讀寫）、requestid（request ID、帶 request_id 的 log）、ratelimit、
 │   │                          # taipei（台北日期）
@@ -123,7 +132,7 @@ nest-egg/
 - **測試：** 每個使用者資料 API 都有 A/B 隔離測試：A 建立的資料，B 的列表看不到；B 用 A 的 id 查、改、刪都得到 404，A 的資料不變。
 - **自動檢查：** `nest-egg-money-review` 的 `user-id-from-request` 規則抓「從請求讀 `user_id`」；查詢有沒有篩選要人工檢查（`references/judgement.md` 第 10 項）。
 
-`currencies`、`rate_snapshots` 已定案（第 2 步，`backend/db/migrations/00005`、`00006`）；`fx_trades` 是草稿，欄位在第 3 步的 change 決定。
+`currencies`、`rate_snapshots` 已定案（第 2 步，`backend/db/migrations/00005`、`00006`）；`categories`、`ledger_entries` 在第 3 步定案（`00007`、`00008`）；`fx_trades` 是草稿，欄位在第 4 步的 change 決定。
 
 ```sql
 -- 幣別，所有使用者共用。新增幣別用新的 migration 插入資料。初始資料：TWD（新臺幣，2）、USD（美元，2）
@@ -133,16 +142,44 @@ CREATE TABLE currencies (
     minor_unit SMALLINT NOT NULL  -- ISO 4217 的小數位數
 );
 
+-- 收支分類，每個使用者各自一套。使用者第一次取得分類時，才冪等地建立 8 個預設分類
+CREATE TABLE categories (
+    id         BIGSERIAL   PRIMARY KEY,
+    user_id    BIGINT      NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind       TEXT        NOT NULL CHECK (kind IN ('income', 'expense')),
+    name       TEXT        NOT NULL CHECK (char_length(name) BETWEEN 1 AND 20),
+    position   SMALLINT    NOT NULL,  -- 顯示順序
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (user_id, kind, name),
+    UNIQUE (id, user_id)              -- 給 ledger_entries 的複合外鍵用
+);
+
+-- 收支紀錄。收入或支出由分類的 kind 決定，不另外存
+CREATE TABLE ledger_entries (
+    id               BIGSERIAL     PRIMARY KEY,
+    user_id          BIGINT        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    occurred_on      DATE          NOT NULL,           -- 台北日期
+    category_id      BIGINT        NOT NULL,
+    currency         CHAR(3)       NOT NULL REFERENCES currencies(code),
+    amount           NUMERIC(20,4) NOT NULL CHECK (amount > 0),
+    market_rate      NUMERIC(20,8),                    -- 外幣才有：記錄當下查得到的市場參考匯率，之後不自動更新
+    market_rate_date DATE,
+    note             TEXT          NOT NULL DEFAULT '' CHECK (char_length(note) <= 200),
+    created_at       TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    FOREIGN KEY (category_id, user_id) REFERENCES categories (id, user_id),  -- 只能用自己的分類
+    CHECK ((market_rate IS NULL) = (market_rate_date IS NULL))
+);
+
 -- 換匯交易：付出 pay 換到 buy。買美金：buy=USD、pay=TWD；賣回台幣則相反
 CREATE TABLE fx_trades (
     id           BIGSERIAL PRIMARY KEY,
     user_id      BIGINT        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    traded_at    TIMESTAMPTZ   NOT NULL,
+    traded_on    DATE          NOT NULL,  -- 台北日期；同一天多筆依 id（建立順序）排先後
     buy_currency CHAR(3)       NOT NULL REFERENCES currencies(code),
     buy_amount   NUMERIC(20,4) NOT NULL CHECK (buy_amount > 0),
     pay_currency CHAR(3)       NOT NULL REFERENCES currencies(code),
     pay_amount   NUMERIC(20,4) NOT NULL CHECK (pay_amount > 0),
-    fee          NUMERIC(20,4) NOT NULL DEFAULT 0 CHECK (fee >= 0),  -- 以 pay_currency 計
+    fee          NUMERIC(20,4) NOT NULL DEFAULT 0 CHECK (fee >= 0),  -- 一律以 TWD 計
     trade_rate   NUMERIC(20,8) NOT NULL,  -- 銀行實際成交匯率（使用者輸入，1 外幣 = X 台幣）
     market_rate      NUMERIC(20,8),       -- 交易日的市場參考匯率，存值不用 FK；往回 10 天都查不到為 NULL
     market_rate_date DATE,                -- market_rate 實際的日期（週末、假日會早於交易日）
@@ -175,14 +212,15 @@ ORDER BY rate_date DESC LIMIT 1;
 ```
 
 - 換匯：`market_rate` 與 `market_rate_date` 都存下來。週末透過銀行 app 換匯，用的是銀行自訂的非營業時間報價，匯差通常比平日大，這是實際多付的成本。
+- 收支：外幣紀錄存記錄當下查得到的那一筆，之後不自動更新。央行下午 4～5 點才公布當天匯率，`rate.Updater` 17:30 才抓，所以平日白天記的通常是前一個營業日的匯率（兩天通常只差 0.1% 左右）。修改紀錄時只有日期或幣別改變才重新查詢。之後若要自動補成當天的匯率，用 `market_rate_date < occurred_on` 就找得出需要補的紀錄。
 - 總資產頁：用今天（台北）查到的匯率折合台幣，畫面標出匯率日期與資料來源。
 
 ### 每月加權平均換匯成本
 
 ```sql
-SELECT date_trunc('month', traded_at AT TIME ZONE 'Asia/Taipei') AS month,
-       SUM(pay_amount + fee) / SUM(buy_amount)                  AS avg_cost_rate,
-       SUM(buy_amount)                                          AS total_bought
+SELECT date_trunc('month', traded_on)          AS month,
+       SUM(pay_amount + fee) / SUM(buy_amount) AS avg_cost_rate,
+       SUM(buy_amount)                         AS total_bought
 FROM fx_trades
 WHERE user_id = $1 AND buy_currency = 'USD' AND pay_currency = 'TWD'
 GROUP BY month
@@ -190,7 +228,23 @@ ORDER BY month;
 ```
 
 - 同一個月買好幾次時，平均成本要用「台幣總額 ÷ 外幣總額」，不能把各筆匯率相加再平均。
-- `AT TIME ZONE 'Asia/Taipei'` 確保台灣時間 10/1 早上的交易算在 10 月，而不是 UTC 的 9 月。
+- 只看當月的買進，用來比較這個月是否比上個月買貴；持有成本另外用移動平均算（下一段）。
+- `traded_on` 存的就是台北日期，分組不需要 `AT TIME ZONE`；如果欄位是時間戳，才要先 `AT TIME ZONE 'Asia/Taipei'` 再取月份。
+
+### 持有成本（移動平均）
+
+外幣與股票的均價、未實現損益用移動平均，依日期與建立順序逐筆計算（CLAUDE.md 設計規則 7）：
+
+- 買進或外幣收入：成本 += 付出 + 手續費（外幣收入用 `market_rate` 換算），數量 += 取得。
+- 賣出或提領：依當下均價扣成本，均價不變；賣出的已實現損益 = 拿到的台幣 − 手續費 − 均價 × 賣出數量。外幣提領沒有換回台幣，不算已實現損益。
+- 餘額可以是負數（例如沒記到買進就先記了賣出）。外幣數量為負的期間，均價與損益算不出來，回 `null`，不硬算。
+
+接續第 1 節的範例：9、10 月共買 2,000 美元、成本 64,520，均價 32.26。之後以 32.00 賣出 500 美元：
+
+- 扣掉的成本 = 500 × 32.26 = 16,130；拿到 16,000 台幣，已實現損益 −130。
+- 剩下 1,500 美元，成本 48,390，均價仍是 32.26。
+
+這要依序逐筆計算，沒辦法寫成一條 SQL 加總，在 Go 用 `decimal` 算。
 
 ### 匯差
 
@@ -198,8 +252,10 @@ ORDER BY month;
 
 ### 之後的步驟（草稿）
 
-- **第 3 步 現金與換匯：** 現金存入、提領的資料表在該步驟的 change 設計；`fx_trades` 如上。現金餘額 = 存入 − 提領 ± 換匯 ± 股票買賣。
-- **第 4、5 步 股票：** `stock_trades`：user_id、symbol、market（TW/US）、side、quantity、price、currency、fee、tax、traded_at。美股台幣交割另外記銀行換算匯率（`settle_rate`）與實際扣款的台幣金額，手續費以台幣計；均價與損益的算法（例如以台幣總成本 ÷ 股數為均價、損益含匯差）在第 5 步確認。
+- **第 4 步 換匯：** `fx_trades` 如上。新增時核對「外幣金額 × 成交匯率」和台幣金額，差距超過 1 元回 422；手續費不列入核對。
+- **第 5 步 總覽：** 現金餘額 = 收入 − 支出 ± 換匯 ± 股票買賣，依幣別分開。
+- **第 6、8 步 股票：** `stock_trades`：user_id、symbol、market（TW/US）、side、quantity、price、currency、fee、tax、traded_on。美股台幣交割另外記銀行換算匯率（`settle_rate`）與實際扣款的台幣金額，手續費以台幣計；均價與損益的算法（例如以台幣總成本 ÷ 股數為均價、損益含匯差）在第 8 步確認。
+- **第 7 步 更多幣別：** 收支紀錄加上扣款幣別：原幣（例如 JPY 3,000）與實際扣款的幣別不同時（刷卡以台幣扣款），用當天市場匯率換算扣款金額，之後可以手動改成帳單金額。這和美股的台幣交割是同一個概念。
 
 ## 6. API
 
@@ -216,15 +272,21 @@ JSON 中的金額與匯率一律用字串。
 | `POST /api/auth/password/reset`                                           | 重設密碼（token、password、confirm_password），成功回 204；token 無效或過期 400、欄位錯誤 422                                                | 會員 |
 | `POST /api/auth/password/change`                                          | 變更密碼（current_password、password、confirm_password），需登入；成功回 204，其他裝置全部登出；目前密碼錯誤 403、帳號鎖定 423、欄位錯誤 422 | 會員 |
 | `GET /api/currencies`                                                     | 幣別清單 `{"currencies":[{"code","name","minor_unit"}]}`，依代碼排序                                                                        | 2    |
-| `GET /api/fx-trades`                                                      | 換匯交易列表（可用 `from`、`to` 篩選日期）                                                                                                   | 3    |
-| `POST /api/fx-trades`                                                     | 新增換匯交易                                                                                                                                 | 3    |
-| `GET /api/fx-trades/{id}`                                                 | 單筆交易                                                                                                                                     | 3    |
-| `PUT /api/fx-trades/{id}`                                                 | 修改交易                                                                                                                                     | 3    |
-| `DELETE /api/fx-trades/{id}`                                              | 刪除交易                                                                                                                                     | 3    |
-| `GET /api/fx-trades/monthly-cost?buy=USD&pay=TWD`                         | 每月加權平均成本                                                                                                                             | 3    |
+| `GET /api/categories`                                                     | 自己的分類 `{"categories":[{"id","kind","name"}]}`，依顯示順序；第一次取得時建立預設分類                                             | 3    |
+| `GET /api/ledger-entries?month=2026-10`                                   | 某個月自己的收支紀錄（日期由新到舊）與各幣別的收入、支出、結餘合計；`month` 不填是台北的本月                                               | 3    |
+| `POST /api/ledger-entries`                                                | 新增收支紀錄（`occurred_on`、`category_id`、`currency`、`amount`、`note`），外幣帶入市場參考匯率；成功回 201                               | 3    |
+| `GET /api/ledger-entries/{id}`                                            | 單筆收支紀錄；別人的或不存在都回 404                                                                                                         | 3    |
+| `PUT /api/ledger-entries/{id}`                                            | 整筆修改；只有日期或幣別改變才重新帶入市場參考匯率                                                                                           | 3    |
+| `DELETE /api/ledger-entries/{id}`                                         | 刪除，回 204                                                                                                                                 | 3    |
+| `GET /api/fx-trades`                                                      | 換匯交易列表（可用 `from`、`to` 篩選日期）                                                                                                   | 4    |
+| `POST /api/fx-trades`                                                     | 新增換匯交易                                                                                                                                 | 4    |
+| `GET /api/fx-trades/{id}`                                                 | 單筆交易                                                                                                                                     | 4    |
+| `PUT /api/fx-trades/{id}`                                                 | 修改交易                                                                                                                                     | 4    |
+| `DELETE /api/fx-trades/{id}`                                              | 刪除交易                                                                                                                                     | 4    |
+| `GET /api/fx-trades/monthly-cost?buy=USD&pay=TWD`                         | 每月加權平均成本                                                                                                                             | 4    |
 | `GET /api/rates?base=USD&quote=TWD&date=2026-10-17`                       | 某一天的市場參考匯率（第 5 節「週末與假日的匯率」），回傳 `rate`、`rate_date`、`source`；`date` 不填是台北的今天；查不到 404，幣別不存在、日期格式錯誤或在未來 422 | 2    |
 | `GET /api/rates/history?base=USD&quote=TWD&from=2026-01-01&to=2026-10-31` | 匯率歷史（走勢圖）                                                                                                                           | 之後 |
-| `GET /api/portfolio/summary`                                              | 成本、市值、未實現損益（第 3 步先做現金，第 4、5 步加入股票）                                                                                | 3    |
+| `GET /api/portfolio/summary`                                              | 成本、市值、未實現損益（第 5 步先做現金，第 6、8、9 步加入股票、基金、黃金）                                                                                | 5    |
 
 「階段」對應第 1 節「開發階段」的步驟。幣別與匯率是所有使用者共用的資料，仍然需要登入，回應不含 `user_id`。除了 health 與會員的公開路徑，所有 API 都需要登入，而且只回傳自己的資料（第 5 節「資料屬於使用者」）。錯誤回應格式見第 8 節。
 
@@ -232,7 +294,7 @@ JSON 中的金額與匯率一律用字串。
 
 ```json
 {
-  "traded_at": "2026-10-07T10:30:00+08:00",
+  "traded_on": "2026-10-07",
   "buy_currency": "USD",
   "buy_amount": "1000",
   "pay_currency": "TWD",
@@ -255,7 +317,7 @@ JSON 中的金額與匯率一律用字串。
 | 匯率（不用） | fawazahmed0 currency-api | 歷史只到 2024-03，有缺日，來源不明 |
 | 匯率（不用） | FRED `DEXTAUS` | 條款禁止儲存與商用；每週公布，落後 3～10 天 |
 | 台股 | `https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL` | 免 key，每日收盤資料。日期是民國格式（`1151006` = 2026-10-06），數值全是字串，要自行轉換。FinMind `TaiwanStockPrice` 也是候選 |
-| 美股 | FinMind `USStockPrice`、Alpha Vantage、Finnhub 等 | 第 5 步再選。Alpha Vantage、Finnhub 要申請 API key，免費方案有呼叫次數限制 |
+| 美股 | FinMind `USStockPrice`、Alpha Vantage、Finnhub 等 | 第 8 步再選。Alpha Vantage、Finnhub 要申請 API key，免費方案有呼叫次數限制 |
 
 以上是 2026-10-20 用 curl 實測與閱讀條款的結果。
 
@@ -273,7 +335,7 @@ type RateProvider interface {
 - 整批驗證後才寫入：資料是空的、日期重複或在未來、數值 ≤ 0、格式不對時整批不寫，已存的資料不動。寫入是單一 statement，新的日期新增、數值變了才更新。
 - 背景工作 `rate.Updater`：伺服器啟動時抓一次，之後每天台北 17:30；失敗或還沒有今天的匯率，每小時重試到 22:30。週末與假日當天的匯率不會出現，會一路重試到 22:30，可以接受。
 - 關機順序（`cmd/server/main.go` 的 `runServer`）：先停 HTTP，再取消背景工作並等它結束，最後才關資料庫連線。
-- 新增換匯交易時，用第 5 節「週末與假日的匯率」的查詢帶入 `market_rate` 與 `market_rate_date`。
+- 新增換匯交易與外幣收支紀錄時，用第 5 節「週末與假日的匯率」的查詢帶入 `market_rate` 與 `market_rate_date`。
 
 ## 8. 錯誤處理與 log
 
@@ -346,3 +408,7 @@ type RateProvider interface {
 - 依賴弱點掃描：Go 用 `govulncheck ./...`（`brew install govulncheck`），前端用 `pnpm audit`，每次升級套件後跑一次。
 - 接上 SMTP 之後再做：註冊時驗證 email、登入新裝置與變更密碼時寄通知信。
 - 「目前登入的裝置」列表，讓使用者看到並個別登出（需要在 `sessions` 多存裝置資訊）。
+- 分類管理：新增、改名、刪除、排序分類。允許刪除之後，「全部刪光又冒出預設分類」的情況要改用 `users` 上的旗標記錄已建立過預設分類。
+- 帳戶（現金、銀行、各張信用卡）：目前不分帳戶。要加時在收支與交易加 `account_id`，舊資料歸到「未指定」帳戶。
+- 外幣收支的市場匯率自動補成當天：目前存記錄當下查得到的那一筆。要改時在 `rate.Updater` 抓完之後，替最近 10 天內 `market_rate_date < occurred_on` 的紀錄重新查詢。
+- 從「天天記帳」匯入歷史紀錄。
