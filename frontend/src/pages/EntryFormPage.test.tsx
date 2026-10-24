@@ -1,24 +1,29 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import type { Entry } from '../api/ledger'
+import { expect, test } from 'vitest'
+import { freezeTime } from '../test/clock'
+import { makeEntry } from '../test/entries'
 import { fakeBackend } from '../test/fakeBackend'
 import { renderApp } from '../test/renderApp'
 
-beforeEach(() => {
-  vi.useFakeTimers({ toFake: ['Date'] })
-  vi.setSystemTime(new Date('2026-10-23T04:00:00Z'))
-})
-
-afterEach(() => {
-  vi.useRealTimers()
-})
+freezeTime('2026-10-23T04:00:00Z')
 
 function categoryNames() {
   return within(screen.getByRole('group', { name: '分類' }))
     .getAllByRole('radio')
     .map((radio) => radio.closest('label')?.textContent)
 }
+
+async function fillAndSave({ category, amount = '120', date }: { category?: string; amount?: string; date?: string }) {
+  const user = userEvent.setup()
+  await screen.findByRole('radio', { name: '飲食' })
+  if (category) await user.click(screen.getByRole('radio', { name: category }))
+  if (amount) await user.type(screen.getByLabelText('金額'), amount)
+  if (date !== undefined) fireEvent.change(screen.getByLabelText('日期'), { target: { value: date } })
+  await user.click(screen.getByRole('button', { name: '儲存' }))
+}
+
+const posted = (backend: ReturnType<typeof fakeBackend>) => backend.called('POST', '/api/ledger-entries')
 
 test('a new entry defaults to an expense today in TWD with no category chosen', async () => {
   fakeBackend({ user: 'me@example.com' })
@@ -106,23 +111,11 @@ test('is only available when logged in', async () => {
   await waitFor(() => expect(router.state.location.pathname).toBe('/login'))
 })
 
-async function fillAndSave({ category = '飲食', amount = '120', date }: { category?: string | null; amount?: string; date?: string }) {
-  const user = userEvent.setup()
-  if (category) await user.click(await screen.findByRole('radio', { name: category }))
-  else await screen.findByRole('radio', { name: '飲食' })
-  if (amount) await user.type(screen.getByLabelText('金額'), amount)
-  if (date !== undefined) fireEvent.change(screen.getByLabelText('日期'), { target: { value: date } })
-  await user.click(screen.getByRole('button', { name: '儲存' }))
-  return user
-}
-
-const posted = (backend: ReturnType<typeof fakeBackend>) => backend.called('POST', '/api/ledger-entries')
-
 test('requires a category', async () => {
   const backend = fakeBackend({ user: 'me@example.com' })
   renderApp('/entries/new')
 
-  await fillAndSave({ category: null })
+  await fillAndSave({})
 
   expect(await within(screen.getByRole('group', { name: '分類' })).findByText('請選擇分類')).toBeInTheDocument()
   expect(posted(backend)).toBe(false)
@@ -139,7 +132,7 @@ test.each([
   const backend = fakeBackend({ user: 'me@example.com' })
   renderApp('/entries/new')
 
-  await fillAndSave({ amount })
+  await fillAndSave({ category: '飲食', amount })
 
   await waitFor(() => expect(screen.getByLabelText('金額')).toHaveAccessibleDescription(message))
   expect(posted(backend)).toBe(false)
@@ -149,7 +142,7 @@ test('rejects a date after today in Taipei', async () => {
   const backend = fakeBackend({ user: 'me@example.com' })
   renderApp('/entries/new')
 
-  await fillAndSave({ date: '2026-10-24' })
+  await fillAndSave({ category: '飲食', date: '2026-10-24' })
 
   await waitFor(() => expect(screen.getByLabelText('日期')).toHaveAccessibleDescription('日期不能晚於今天'))
   expect(posted(backend)).toBe(false)
@@ -159,7 +152,7 @@ test('requires a date', async () => {
   const backend = fakeBackend({ user: 'me@example.com' })
   renderApp('/entries/new')
 
-  await fillAndSave({ date: '' })
+  await fillAndSave({ category: '飲食', date: '' })
 
   await waitFor(() => expect(screen.getByLabelText('日期')).toHaveAccessibleDescription('請選擇日期'))
   expect(posted(backend)).toBe(false)
@@ -172,7 +165,7 @@ test('limits the note to 200 characters', async () => {
 
   await user.click(await screen.findByLabelText('備註'))
   await user.paste('午'.repeat(201))
-  await fillAndSave({})
+  await fillAndSave({ category: '飲食' })
 
   await waitFor(() => expect(screen.getByLabelText('備註')).toHaveAccessibleDescription('備註最多 200 字'))
   expect(posted(backend)).toBe(false)
@@ -185,7 +178,7 @@ test('shows the fields the server rejected next to those fields', async () => {
   })
   const { router } = renderApp('/entries/new')
 
-  await fillAndSave({})
+  await fillAndSave({ category: '飲食' })
 
   expect(await within(screen.getByRole('group', { name: '分類' })).findByText('找不到這個分類，請重新選擇')).toBeInTheDocument()
   expect(screen.getByLabelText('金額')).toHaveAccessibleDescription('金額格式不正確')
@@ -196,7 +189,7 @@ test('shows a currency the server rejected next to the currency field', async ()
   fakeBackend({ user: 'me@example.com', ledger: { saveStatus: 422, saveFields: { currency: 'unknown currency' } } })
   renderApp('/entries/new')
 
-  await fillAndSave({})
+  await fillAndSave({ category: '飲食' })
 
   await waitFor(() => expect(screen.getByLabelText('幣別')).toHaveAccessibleDescription('不支援這個幣別'))
 })
@@ -205,7 +198,7 @@ test('shows a general error when saving fails for another reason', async () => {
   fakeBackend({ user: 'me@example.com', ledger: { saveStatus: 500 } })
   renderApp('/entries/new')
 
-  await fillAndSave({})
+  await fillAndSave({ category: '飲食' })
 
   expect(await screen.findByRole('alert')).toHaveTextContent('儲存失敗，請稍後再試')
 })
@@ -216,24 +209,14 @@ test('sends the user to the login page when the session has expired', async () =
 
   await screen.findByRole('radio', { name: '飲食' })
   backend.state.user = null
-  await fillAndSave({})
+  await fillAndSave({ category: '飲食' })
 
   await waitFor(() => expect(router.state.location.pathname).toBe('/login'))
 })
 
-const lunch: Entry = {
-  id: 1,
-  occurred_on: '2026-10-20',
-  kind: 'expense',
-  category: { id: 1, name: '飲食' },
-  currency: 'TWD',
-  amount: '120.00',
-  market_rate: null,
-  market_rate_date: null,
-  note: '午餐',
-}
+const lunch = makeEntry()
 
-const dividend: Entry = {
+const dividend = makeEntry({
   id: 7,
   occurred_on: '2026-10-19',
   kind: 'income',
@@ -243,7 +226,7 @@ const dividend: Entry = {
   market_rate: '32.508',
   market_rate_date: '2026-10-17',
   note: '',
-}
+})
 
 test('opening an entry from the ledger shows the form filled with it', async () => {
   fakeBackend({ user: 'me@example.com', ledger: { entries: [lunch] } })

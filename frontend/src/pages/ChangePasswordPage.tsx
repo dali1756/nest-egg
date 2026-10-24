@@ -7,7 +7,7 @@ import AuthCard from '../components/AuthCard'
 import Button from '../components/Button'
 import Field from '../components/Field'
 import Notice from '../components/Notice'
-import { currentUserKey } from '../hooks/useCurrentUser'
+import { clearUserIfUnauthorized } from '../hooks/useCurrentUser'
 import { passwordHint, passwordSchema } from '../validation/password'
 
 const schema = z
@@ -42,7 +42,7 @@ function ChangePasswordPage() {
     onSuccess: () => reset(),
     onError: (err) => {
       setValue('current_password', '')
-      if (err instanceof ApiError && err.status === 401) queryClient.setQueryData(currentUserKey, null)
+      clearUserIfUnauthorized(queryClient, err)
     },
   })
 

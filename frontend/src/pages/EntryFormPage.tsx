@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Controller, useForm, useWatch, type Resolver } from 'react-hook-form'
+import { Controller, useForm, useWatch } from 'react-hook-form'
 import { useNavigate, useParams } from 'react-router'
 import { z } from 'zod'
 import { ApiError } from '../api/http'
@@ -10,7 +10,6 @@ import {
   deleteEntry,
   getCategories,
   getCurrencies,
-  getEntry,
   updateEntry,
   type Category,
   type Currency,
@@ -26,8 +25,9 @@ import PageMessage from '../components/PageMessage'
 import SelectField from '../components/SelectField'
 import TextLink from '../components/TextLink'
 import { taipeiToday } from '../format/date'
-import { currentUserKey } from '../hooks/useCurrentUser'
-import { ledgerEntriesKey } from '../hooks/useLedgerMonth'
+import { decimalPlaces } from '../format/money'
+import { clearUserIfUnauthorized } from '../hooks/useCurrentUser'
+import { ledgerEntriesKey, useLedgerEntry } from '../hooks/useLedger'
 
 const kinds: { value: Kind; label: string }[] = [
   { value: 'expense', label: '支出' },
@@ -36,30 +36,51 @@ const kinds: { value: Kind; label: string }[] = [
 
 const baseCurrency = 'TWD'
 
+const noCategory = 0
+
 const amountPattern = /^[0-9]{1,16}(\.[0-9]+)?$/
 
-function decimalPlaces(amount: string) {
-  const dot = amount.indexOf('.')
-  return dot < 0 ? 0 : amount.length - dot - 1
-}
-
-function entrySchema(today: string, minorUnit?: number) {
-  return z.object({
-    kind: z.enum(['expense', 'income']),
-    occurred_on: z.string().min(1, '請選擇日期').refine((date) => date <= today, '日期不能晚於今天'),
-    category_id: z.int().positive('請選擇分類'),
-    currency: z.string().min(1, '請選擇幣別'),
-    amount: z
-      .string()
-      .min(1, '請輸入金額')
-      .regex(amountPattern, '請輸入數字，例如 120 或 32.5')
-      .refine((amount) => /[1-9]/.test(amount), '請輸入大於 0 的金額')
-      .refine((amount) => minorUnit === undefined || decimalPlaces(amount) <= minorUnit, `金額最多 ${minorUnit} 位小數`),
-    note: z.string().max(200, '備註最多 200 字'),
-  })
+function entrySchema(today: string, currencies: Currency[]) {
+  return z
+    .object({
+      kind: z.enum(['expense', 'income']),
+      occurred_on: z.string().min(1, '請選擇日期').refine((date) => date <= today, '日期不能晚於今天'),
+      category_id: z.int().positive('請選擇分類'),
+      currency: z.string().min(1, '請選擇幣別'),
+      amount: z
+        .string()
+        .min(1, '請輸入金額')
+        .regex(amountPattern, '請輸入數字，例如 120 或 32.5')
+        .refine((amount) => /[1-9]/.test(amount), '請輸入大於 0 的金額'),
+      note: z.string().max(200, '備註最多 200 字'),
+    })
+    .superRefine((values, ctx) => {
+      const minorUnit = currencies.find((c) => c.code === values.currency)?.minor_unit
+      if (minorUnit !== undefined && decimalPlaces(values.amount) > minorUnit) {
+        ctx.addIssue({ code: 'custom', path: ['amount'], message: `金額最多 ${minorUnit} 位小數` })
+      }
+    })
 }
 
 type EntryValues = z.infer<ReturnType<typeof entrySchema>>
+
+function defaultValuesFor(entry: Entry | undefined): EntryValues {
+  if (!entry) {
+    return { kind: 'expense', occurred_on: taipeiToday(), category_id: noCategory, currency: baseCurrency, amount: '', note: '' }
+  }
+  return {
+    kind: entry.kind,
+    occurred_on: entry.occurred_on,
+    category_id: entry.category.id,
+    currency: entry.currency,
+    amount: entry.amount,
+    note: entry.note,
+  }
+}
+
+function toEntryInput({ occurred_on, category_id, currency, amount, note }: EntryValues): EntryInput {
+  return { occurred_on, category_id, currency, amount, note }
+}
 
 const serverFieldMessages: Record<keyof EntryInput, string> = {
   occurred_on: '日期不正確，請重新選擇',
@@ -71,6 +92,12 @@ const serverFieldMessages: Record<keyof EntryInput, string> = {
 
 function fieldErrorsFrom(err: Error) {
   return err instanceof ApiError && err.status === 422 ? err.fields : undefined
+}
+
+function rejectedFields(err: Error): [keyof EntryInput, string][] {
+  const fields = fieldErrorsFrom(err) ?? {}
+  const names = Object.keys(serverFieldMessages) as (keyof EntryInput)[]
+  return names.filter((name) => fields[name]).map((name) => [name, serverFieldMessages[name]])
 }
 
 function MarketRateNote({ entry }: { entry: Entry }) {
@@ -86,15 +113,13 @@ function MarketRateNote({ entry }: { entry: Entry }) {
   )
 }
 
-function DeleteEntry({ entry, onDeleted }: { entry: Entry; onDeleted: () => void }) {
+function DeleteEntryButton({ entry, onDeleted }: { entry: Entry; onDeleted: () => void }) {
   const queryClient = useQueryClient()
   const [confirming, setConfirming] = useState(false)
   const deletion = useMutation({
     mutationFn: () => deleteEntry(entry.id),
     onSuccess: onDeleted,
-    onError: (err) => {
-      if (err instanceof ApiError && err.status === 401) queryClient.setQueryData(currentUserKey, null)
-    },
+    onError: (err) => clearUserIfUnauthorized(queryClient, err),
   })
 
   if (!confirming) {
@@ -123,46 +148,32 @@ function DeleteEntry({ entry, onDeleted }: { entry: Entry; onDeleted: () => void
 function EntryForm({ categories, currencies, entry }: { categories: Category[]; currencies: Currency[]; entry?: Entry }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const backToMonth = (occurredOn: string) => {
+  const refreshAndShowMonth = (occurredOn: string) => {
     navigate(`/?month=${occurredOn.slice(0, 7)}`)
     void queryClient.invalidateQueries({ queryKey: ledgerEntriesKey })
   }
-  const resolver: Resolver<EntryValues> = (values, context, options) => {
-    const minorUnit = currencies.find((c) => c.code === values.currency)?.minor_unit
-    return (zodResolver(entrySchema(taipeiToday(), minorUnit)) as Resolver<EntryValues>)(values, context, options)
-  }
   const { register, handleSubmit, control, setValue, setError, formState } = useForm<EntryValues>({
-    resolver,
-    defaultValues: entry
-      ? {
-          kind: entry.kind,
-          occurred_on: entry.occurred_on,
-          category_id: entry.category.id,
-          currency: entry.currency,
-          amount: entry.amount,
-          note: entry.note,
-        }
-      : { kind: 'expense', occurred_on: taipeiToday(), category_id: 0, currency: baseCurrency, amount: '', note: '' },
+    resolver: zodResolver(entrySchema(taipeiToday(), currencies)),
+    defaultValues: defaultValuesFor(entry),
   })
   const kind = useWatch({ control, name: 'kind' })
   const mutation = useMutation({
     mutationFn: (input: EntryInput) => (entry ? updateEntry(entry.id, input) : createEntry(input)),
-    onSuccess: (saved) => backToMonth(saved.occurred_on),
+    onSuccess: (saved) => refreshAndShowMonth(saved.occurred_on),
     onError: (err) => {
-      if (err instanceof ApiError && err.status === 401) queryClient.setQueryData(currentUserKey, null)
-      const fields = fieldErrorsFrom(err) ?? {}
-      for (const field of Object.keys(serverFieldMessages) as (keyof EntryInput)[]) {
-        if (fields[field]) setError(field, { message: serverFieldMessages[field] })
-      }
+      clearUserIfUnauthorized(queryClient, err)
+      for (const [field, message] of rejectedFields(err)) setError(field, { message })
     },
   })
   const { errors } = formState
   const showGeneralError = mutation.isError && !fieldErrorsFrom(mutation.error)
 
-  const save = ({ kind: _kind, ...input }: EntryValues) => mutation.mutate(input)
-
   return (
-    <form className="mt-7 flex flex-col gap-5" noValidate onSubmit={handleSubmit(save)}>
+    <form
+      className="mt-7 flex flex-col gap-5"
+      noValidate
+      onSubmit={handleSubmit((values) => mutation.mutate(toEntryInput(values)))}
+    >
       {showGeneralError && <Notice tone="error">儲存失敗，請稍後再試</Notice>}
       <Controller
         control={control}
@@ -175,7 +186,7 @@ function EntryForm({ categories, currencies, entry }: { categories: Category[]; 
             value={field.value}
             onChange={(next) => {
               field.onChange(next)
-              setValue('category_id', 0)
+              setValue('category_id', noCategory)
             }}
           />
         )}
@@ -222,7 +233,7 @@ function EntryForm({ categories, currencies, entry }: { categories: Category[]; 
       <Button type="submit" block disabled={mutation.isPending}>
         {mutation.isPending ? '儲存中…' : '儲存'}
       </Button>
-      {entry && <DeleteEntry entry={entry} onDeleted={() => backToMonth(entry.occurred_on)} />}
+      {entry && <DeleteEntryButton entry={entry} onDeleted={() => refreshAndShowMonth(entry.occurred_on)} />}
     </form>
   )
 }
@@ -231,9 +242,7 @@ function NotFound() {
   return (
     <div className="mx-auto mt-12 flex max-w-170 flex-col items-start gap-2 px-5 text-muted-foreground">
       <p>找不到這筆紀錄</p>
-      <TextLink to="/" className="ml-0">
-        回記帳頁
-      </TextLink>
+      <TextLink to="/">回記帳頁</TextLink>
     </div>
   )
 }
@@ -248,11 +257,7 @@ function EntryFormPage() {
   const entryId = parseEntryId(id)
   const categories = useQuery({ queryKey: ['categories'], queryFn: getCategories })
   const currencies = useQuery({ queryKey: ['currencies'], queryFn: getCurrencies })
-  const entry = useQuery({
-    queryKey: [...ledgerEntriesKey, 'entry', entryId],
-    queryFn: () => getEntry(entryId!),
-    enabled: entryId !== undefined,
-  })
+  const entry = useLedgerEntry(entryId)
 
   const missing = entry.error instanceof ApiError && entry.error.status === 404
   if (editing && (entryId === undefined || missing)) return <NotFound />

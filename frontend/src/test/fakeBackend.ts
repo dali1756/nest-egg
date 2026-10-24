@@ -18,9 +18,7 @@ type Options = {
 export type LedgerOptions = {
   entries?: Entry[]
   totals?: Record<string, Total[]>
-  usdRate?: { rate: DecimalString; date: string }
   listStatus?: number
-  entryStatus?: number
   saveStatus?: number
   saveFields?: Record<string, string>
   savePending?: boolean
@@ -37,7 +35,7 @@ function empty(status: number) {
   return new Response(null, { status })
 }
 
-export const defaultCategories: Category[] = [
+const categories: Category[] = [
   { id: 1, kind: 'expense', name: '飲食' },
   { id: 2, kind: 'expense', name: '生活用品' },
   { id: 3, kind: 'expense', name: '美容美髮' },
@@ -68,8 +66,7 @@ function fakeLedger(opts: LedgerOptions = {}) {
   let nextId = Math.max(0, ...entries.keys()) + 1
 
   function toEntry(id: number, input: EntryInput): Entry {
-    const category = defaultCategories.find((c) => c.id === input.category_id)!
-    const rate = input.currency === 'TWD' ? undefined : opts.usdRate
+    const category = categories.find((c) => c.id === input.category_id)!
     return {
       id,
       occurred_on: input.occurred_on,
@@ -77,17 +74,17 @@ function fakeLedger(opts: LedgerOptions = {}) {
       category: { id: category.id, name: category.name },
       currency: input.currency,
       amount: twoDecimals(input.amount),
-      market_rate: rate?.rate ?? null,
-      market_rate_date: rate?.date ?? null,
+      market_rate: null,
+      market_rate_date: null,
       note: input.note,
     }
   }
 
   function save(id: number, input: EntryInput, status: number): Response | Promise<Response> {
     if (opts.savePending) return new Promise<Response>(() => {})
-    const failed = opts.saveStatus
-    if (failed === 422) return json(422, { error: 'invalid input', fields: opts.saveFields ?? {} })
-    if (failed) return json(failed, { error: 'save failed' })
+    const failStatus = opts.saveStatus
+    if (failStatus === 422) return json(422, { error: 'invalid input', fields: opts.saveFields ?? {} })
+    if (failStatus) return json(failStatus, { error: 'save failed' })
     const entry = toEntry(id, input)
     entries.set(id, entry)
     return json(status, entry)
@@ -95,7 +92,7 @@ function fakeLedger(opts: LedgerOptions = {}) {
 
   function handle(method: string, path: string, body: unknown): Response | Promise<Response> | undefined {
     const url = new URL(path, 'http://localhost')
-    if (method === 'GET' && url.pathname === '/api/categories') return json(200, { categories: defaultCategories })
+    if (method === 'GET' && url.pathname === '/api/categories') return json(200, { categories })
     if (method === 'GET' && url.pathname === '/api/currencies') return json(200, { currencies })
     if (url.pathname === '/api/ledger-entries') {
       if (method === 'POST') return save(nextId++, body as EntryInput, 201)
@@ -108,7 +105,6 @@ function fakeLedger(opts: LedgerOptions = {}) {
     if (!match) return undefined
     const id = Number.parseInt(match[1], 10)
     const entry = entries.get(id)
-    if (method === 'GET' && opts.entryStatus) return json(opts.entryStatus, { error: 'entry failed' })
     if (!entry) return json(404, { error: 'not found' })
     if (method === 'GET') return json(200, entry)
     if (method === 'PUT') return save(id, body as EntryInput, 200)
@@ -119,7 +115,7 @@ function fakeLedger(opts: LedgerOptions = {}) {
     return undefined
   }
 
-  return { entries, handle }
+  return { handle }
 }
 
 export function fakeBackend(opts: Options = {}) {
@@ -130,7 +126,7 @@ export function fakeBackend(opts: Options = {}) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
     const path = String(input)
-    const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, string>) : undefined
+    const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : undefined
     calls.push({ method, path, body })
 
     const ledgerResponse = ledger.handle(method, path, body)
@@ -146,13 +142,13 @@ export function fakeBackend(opts: Options = {}) {
         if (opts.loginPending) return new Promise<Response>(() => {})
         const status = opts.loginStatus ?? 200
         if (status !== 200) return json(status, { error: 'login failed' })
-        state.user = body!.email.trim().toLowerCase()
+        state.user = String(body!.email).trim().toLowerCase()
         return json(200, { email: state.user })
       }
       case 'POST /api/auth/register': {
         const status = opts.registerStatus ?? 201
         if (status !== 201) return json(status, { error: 'register failed' })
-        state.user = body!.email.trim().toLowerCase()
+        state.user = String(body!.email).trim().toLowerCase()
         return json(201, { email: state.user })
       }
       case 'POST /api/auth/logout':
@@ -181,7 +177,6 @@ export function fakeBackend(opts: Options = {}) {
   return {
     state,
     calls,
-    entries: ledger.entries,
     called: (method: string, path: string) => calls.some((c) => c.method === method && c.path === path),
   }
 }

@@ -19,26 +19,26 @@ export function isMonth(value: string): boolean {
   return monthPattern.test(value)
 }
 
-function numbers(date: string): number[] {
+function dateParts(date: string): number[] {
   return date.split('-').map((part) => Number.parseInt(part, 10))
 }
 
 export function shiftMonth(month: string, delta: number): string {
-  const [year, m] = numbers(month)
+  const [year, m] = dateParts(month)
   const index = year * 12 + (m - 1) + delta
   const shiftedMonth = (index % 12) + 1
   return `${Math.floor(index / 12)}-${String(shiftedMonth).padStart(2, '0')}`
 }
 
 export function monthLabel(month: string): string {
-  const [year, m] = numbers(month)
+  const [year, m] = dateParts(month)
   return `${year} 年 ${m} 月`
 }
 
 const weekdays = '日一二三四五六'
 
 export function dayLabel(date: string): string {
-  const [year, m, d] = numbers(date)
+  const [year, m, d] = dateParts(date)
   const weekday = new Date(Date.UTC(year, m - 1, d)).getUTCDay()
   return `${m}/${d}（${weekdays[weekday]}）`
 }

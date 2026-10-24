@@ -5,7 +5,7 @@ import { buttonClassName } from '../components/buttonStyles'
 import Notice from '../components/Notice'
 import { dayLabel, isMonth, monthLabel, shiftMonth, taipeiMonth } from '../format/date'
 import { formatAmount } from '../format/money'
-import { useLedgerMonth } from '../hooks/useLedgerMonth'
+import { useLedgerMonth } from '../hooks/useLedger'
 
 function groupByDate(entries: Entry[]): [string, Entry[]][] {
   const groups = new Map<string, Entry[]>()

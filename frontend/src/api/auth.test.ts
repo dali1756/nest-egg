@@ -1,13 +1,6 @@
-import { describe, expect, test, vi } from 'vitest'
+import { describe, expect, test } from 'vitest'
+import { stubFetch } from '../test/stubFetch'
 import { ApiError, changePassword, forgotPassword, getMe, login, logout, register, resetPassword } from './auth'
-
-function stubFetch(status: number, body?: unknown) {
-  const fetchMock = vi.fn(async () =>
-    new Response(body === undefined ? null : JSON.stringify(body), { status }),
-  )
-  vi.stubGlobal('fetch', fetchMock)
-  return fetchMock
-}
 
 describe('getMe', () => {
   test('returns null when not logged in', async () => {

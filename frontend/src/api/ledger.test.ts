@@ -1,26 +1,12 @@
-import { describe, expect, test, vi } from 'vitest'
+import { describe, expect, test } from 'vitest'
+import { makeEntry } from '../test/entries'
+import { stubFetch } from '../test/stubFetch'
 import { ApiError } from './http'
 import { createEntry, deleteEntry, getCategories, getCurrencies, getEntry, getMonth, updateEntry } from './ledger'
 
-function stubFetch(status: number, body?: unknown) {
-  const fetchMock = vi.fn<typeof fetch>(async () => new Response(body === undefined ? null : JSON.stringify(body), { status }))
-  vi.stubGlobal('fetch', fetchMock)
-  return fetchMock
-}
-
 const jsonHeaders = { 'Content-Type': 'application/json' }
 
-const lunch = {
-  id: 1,
-  occurred_on: '2026-10-23',
-  kind: 'expense',
-  category: { id: 1, name: '飲食' },
-  currency: 'TWD',
-  amount: '120.00',
-  market_rate: null,
-  market_rate_date: null,
-  note: '午餐',
-}
+const lunch = makeEntry({ occurred_on: '2026-10-23' })
 
 const input = { occurred_on: '2026-10-23', category_id: 1, currency: 'TWD', amount: '120', note: '午餐' }
 

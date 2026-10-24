@@ -1,22 +1,12 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import type { Entry } from '../api/ledger'
+import { expect, test } from 'vitest'
+import { freezeTime } from '../test/clock'
+import { makeEntry } from '../test/entries'
 import { fakeBackend, type LedgerOptions } from '../test/fakeBackend'
 import { renderApp } from '../test/renderApp'
 
-beforeEach(() => {
-  vi.useFakeTimers({ toFake: ['Date'] })
-  vi.setSystemTime(new Date('2026-10-23T04:00:00Z'))
-})
-
-afterEach(() => {
-  vi.useRealTimers()
-})
-
-function entry(id: number, occurred_on: string, category: Entry['category'], kind: Entry['kind'], amount: Entry['amount'], note = '', currency = 'TWD'): Entry {
-  return { id, occurred_on, kind, category, currency, amount, market_rate: null, market_rate_date: null, note }
-}
+freezeTime('2026-10-23T04:00:00Z')
 
 const food = { id: 1, name: '飲食' }
 const supplies = { id: 2, name: '生活用品' }
@@ -24,10 +14,10 @@ const salary = { id: 5, name: '薪水' }
 
 const octoberAndSeptember: LedgerOptions = {
   entries: [
-    entry(1, '2026-10-23', food, 'expense', '120.00', '午餐'),
-    entry(2, '2026-10-23', supplies, 'expense', '35.50', '牙膏'),
-    entry(3, '2026-10-05', salary, 'income', '50000.00'),
-    entry(4, '2026-09-30', food, 'expense', '80.00', '九月的晚餐'),
+    makeEntry({ id: 1, occurred_on: '2026-10-23', category: food, amount: '120.00', note: '午餐' }),
+    makeEntry({ id: 2, occurred_on: '2026-10-23', category: supplies, amount: '35.50', note: '牙膏' }),
+    makeEntry({ id: 3, occurred_on: '2026-10-05', category: salary, kind: 'income', amount: '50000.00', note: '' }),
+    makeEntry({ id: 4, occurred_on: '2026-09-30', category: food, amount: '80.00', note: '九月的晚餐' }),
   ],
   totals: {
     '2026-10': [{ currency: 'TWD', income: '50000.00', expense: '155.50', net: '49844.50' }],
@@ -73,7 +63,7 @@ test('shows the totals exactly as the backend sent them, with thousands separato
 test('links each entry to its edit page and shows the currency', async () => {
   fakeBackend({
     user: 'me@example.com',
-    ledger: { entries: [entry(7, '2026-10-20', { id: 7, name: '股息' }, 'income', '12.34', '', 'USD')] },
+    ledger: { entries: [makeEntry({ id: 7, category: { id: 7, name: '股息' }, kind: 'income', amount: '12.34', note: '', currency: 'USD' })] },
   })
 
   renderApp('/')

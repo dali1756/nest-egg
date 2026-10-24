@@ -1,13 +1,13 @@
+import { ApiError, jsonHeaders } from './http'
+
+export { ApiError }
+
 export type User = { email: string }
 
 export type LoginInput = { email: string; password: string }
 export type RegisterInput = { email: string; password: string; confirm_password: string }
 export type ResetPasswordInput = { token: string; password: string; confirm_password: string }
 export type ChangePasswordInput = { current_password: string; password: string; confirm_password: string }
-
-import { ApiError, jsonHeaders } from './http'
-
-export { ApiError }
 
 async function post(path: string, body?: unknown): Promise<void> {
   const res = await fetch(path, {
