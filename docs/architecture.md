@@ -104,7 +104,7 @@ nest-egg/
 │   └── go.mod                 # module nest-egg/backend
 ├── frontend/
 │   ├── Dockerfile             # 開發用映像（Vite）
-│   └── src/{api,pages,components,hooks,validation,test}  # routes.tsx 定義路徑；validation 放和後端共用規則的 Zod schema
+│   └── src/{api,pages,components,hooks,format,validation,test}  # routes.tsx 定義路徑；format 放日期與金額的顯示格式（台北日期、千分位）；validation 放和後端共用規則的 Zod schema
 ├── docs/
 │   └── architecture.md
 ├── docker-compose.yml         # 開發環境：db、backend、frontend 一起啟動
