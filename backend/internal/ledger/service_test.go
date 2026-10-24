@@ -11,16 +11,17 @@ import (
 	"github.com/shopspring/decimal"
 
 	"nest-egg/backend/internal/platform/apperr"
-	"nest-egg/backend/internal/platform/taipei"
-	"nest-egg/backend/internal/rate"
 )
 
 const (
-	userA   = int64(1)
-	userB   = int64(2)
-	aFood   = int64(1)
-	aSalary = int64(5)
-	bFood   = int64(9)
+	userA = int64(1)
+	userB = int64(2)
+)
+
+var (
+	aFood   = Category{ID: 11, Kind: KindExpense, Name: "飲食"}
+	aSalary = Category{ID: 15, Kind: KindIncome, Name: "薪水"}
+	bFood   = Category{ID: 21, Kind: KindExpense, Name: "飲食"}
 )
 
 var fixedNow = time.Date(2026, 10, 23, 16, 30, 0, 0, time.UTC)
@@ -28,19 +29,16 @@ var fixedNow = time.Date(2026, 10, 23, 16, 30, 0, 0, time.UTC)
 func newTestService(t *testing.T) (*Service, *fakeStore, *fakeRates) {
 	t.Helper()
 	store := newFakeStore()
+	store.categories[userA] = []Category{aFood, aSalary}
+	store.categories[userB] = []Category{bFood}
 	rates := &fakeRates{}
 	svc := NewService(store, fakeCurrencies{}, rates)
 	svc.now = func() time.Time { return fixedNow }
-	for _, user := range []int64{userA, userB} {
-		if _, err := svc.Categories(t.Context(), user); err != nil {
-			t.Fatal(err)
-		}
-	}
 	return svc, store, rates
 }
 
 func validInput() EntryInput {
-	return EntryInput{OccurredOn: "2026-10-23", CategoryID: aFood, Currency: "TWD", Amount: "120", Note: "午餐"}
+	return EntryInput{OccurredOn: "2026-10-23", CategoryID: aFood.ID, Currency: "TWD", Amount: "120", Note: "午餐"}
 }
 
 func TestCreateEntryRejectsInvalidFields(t *testing.T) {
@@ -52,7 +50,7 @@ func TestCreateEntryRejectsInvalidFields(t *testing.T) {
 		"date with slashes":        {func(in *EntryInput) { in.OccurredOn = "2026/10/23" }, []string{"occurred_on"}},
 		"date in the future":       {func(in *EntryInput) { in.OccurredOn = "2026-10-25" }, []string{"occurred_on"}},
 		"missing category":         {func(in *EntryInput) { in.CategoryID = 0 }, []string{"category_id"}},
-		"another user's category":  {func(in *EntryInput) { in.CategoryID = bFood }, []string{"category_id"}},
+		"another user's category":  {func(in *EntryInput) { in.CategoryID = bFood.ID }, []string{"category_id"}},
 		"missing currency":         {func(in *EntryInput) { in.Currency = "" }, []string{"currency"}},
 		"unknown currency":         {func(in *EntryInput) { in.Currency = "XYZ" }, []string{"currency"}},
 		"zero amount":              {func(in *EntryInput) { in.Amount = "0" }, []string{"amount"}},
@@ -101,7 +99,7 @@ func TestCreateEntryAcceptsValidAmountsAndNotes(t *testing.T) {
 		"note of 200 characters": func(in *EntryInput) { in.Note = strings.Repeat("午", 200) },
 		"no note":                func(in *EntryInput) { in.Note = "" },
 		"today in Taipei":        func(in *EntryInput) { in.OccurredOn = "2026-10-24" },
-		"income category":        func(in *EntryInput) { in.CategoryID = aSalary },
+		"income category":        func(in *EntryInput) { in.CategoryID = aSalary.ID },
 	} {
 		t.Run(name, func(t *testing.T) {
 			svc, _, _ := newTestService(t)
@@ -122,40 +120,20 @@ func TestCreateEntryStoresTheEntry(t *testing.T) {
 		t.Fatalf("CreateEntry: %v", err)
 	}
 
-	if got.ID == 0 || !got.OccurredOn.Equal(time.Date(2026, 10, 23, 0, 0, 0, 0, taipei.Location)) ||
-		got.Category != (Category{ID: aFood, Kind: KindExpense, Name: "飲食"}) || got.Currency != "TWD" ||
-		!got.Amount.Equal(decimal.RequireFromString("120")) || got.MarketRate != nil || got.Note != "午餐" {
-		t.Errorf("CreateEntry = %+v, want the 2026-10-23 TWD 120 飲食 entry without a market rate", got)
+	if got.ID == 0 {
+		t.Error("entry ID = 0, want the stored ID")
 	}
+	wantEntry(t, got, Entry{
+		OccurredOn: taipeiDate("2026-10-23"), Category: aFood, Currency: "TWD", MinorUnit: 2,
+		Amount: decimal.RequireFromString("120"), Note: "午餐",
+	})
 	if len(rates.calls) != 0 {
 		t.Errorf("looked up rates %v for a TWD entry, want none", rates.calls)
 	}
 }
 
-func taipeiDate(s string) time.Time {
-	d, err := taipei.ParseDate(s)
-	if err != nil {
-		panic(err)
-	}
-	return d
-}
-
-func usdSnapshot(date, value string) *rate.Snapshot {
-	return &rate.Snapshot{
-		Rate:   rate.Rate{Base: "USD", Quote: "TWD", Date: taipeiDate(date), Value: decimal.RequireFromString(value)},
-		Source: "cbc",
-	}
-}
-
 func usdInput(date string) EntryInput {
-	return EntryInput{OccurredOn: date, CategoryID: aSalary, Currency: "USD", Amount: "50", Note: "股息"}
-}
-
-func wantMarketRate(t *testing.T, got *MarketRate, value, date string) {
-	t.Helper()
-	if got == nil || !got.Value.Equal(decimal.RequireFromString(value)) || !got.Date.Equal(taipeiDate(date)) {
-		t.Errorf("market rate = %+v, want %s on %s", got, value, date)
-	}
+	return EntryInput{OccurredOn: date, CategoryID: aSalary.ID, Currency: "USD", Amount: "50", Note: "股息"}
 }
 
 func TestCreateForeignEntryStoresTheLatestMarketRateOnOrBeforeItsDate(t *testing.T) {
@@ -186,12 +164,12 @@ func TestCreateForeignEntryWithoutAMarketRateStoresNone(t *testing.T) {
 
 func TestCreateForeignEntryFailsWhenTheRateLookupFails(t *testing.T) {
 	svc, store, rates := newTestService(t)
-	rates.err = errStore
+	rates.err = errRateLookup
 
 	_, err := svc.CreateEntry(t.Context(), userA, usdInput("2026-10-24"))
 
 	var invalid *apperr.ValidationError
-	if !errors.Is(err, errStore) || errors.As(err, &invalid) {
+	if !errors.Is(err, errRateLookup) || errors.As(err, &invalid) {
 		t.Errorf("CreateEntry error = %v, want the lookup error passed up", err)
 	}
 	if len(store.entries) != 0 {
@@ -286,7 +264,7 @@ func TestUpdateAnotherUsersEntryIsNotFound(t *testing.T) {
 	}
 
 	in := validInput()
-	in.CategoryID, in.Amount = bFood, "999"
+	in.CategoryID, in.Amount = bFood.ID, "999"
 	_, err = svc.UpdateEntry(t.Context(), userB, created.ID, in)
 
 	if !errors.Is(err, apperr.ErrNotFound) {
@@ -316,7 +294,7 @@ func TestMonthDefaultsToTheCurrentTaipeiMonth(t *testing.T) {
 }
 
 func TestMonthQueriesFromTheFirstDayToTheNextMonth(t *testing.T) {
-	for month, want := range map[string][2]string{
+	for month, want := range map[string]struct{ from, to string }{
 		"2026-10": {"2026-10-01", "2026-11-01"},
 		"2026-12": {"2026-12-01", "2027-01-01"},
 		"2026-02": {"2026-02-01", "2026-03-01"},
@@ -326,7 +304,7 @@ func TestMonthQueriesFromTheFirstDayToTheNextMonth(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Month(%s): %v", month, err)
 		}
-		wantCall := monthCall{userA, taipeiDate(want[0]), taipeiDate(want[1])}
+		wantCall := monthCall{userA, taipeiDate(want.from), taipeiDate(want.to)}
 		if got.Month != month || len(store.monthCalls) == 0 || store.monthCalls[0] != wantCall {
 			t.Errorf("Month(%s) = %q, queried %v; want %v", month, got.Month, store.monthCalls, wantCall)
 		}
@@ -344,21 +322,15 @@ func TestMonthRejectsMalformedMonths(t *testing.T) {
 	}
 }
 
-func TestMonthTotalsNetIsIncomeMinusExpense(t *testing.T) {
-	svc, store, _ := newTestService(t)
-	store.totals = []Total{
-		{Currency: "TWD", MinorUnit: 2, Income: decimal.RequireFromString("50000"), Expense: decimal.RequireFromString("155.5")},
-		{Currency: "USD", MinorUnit: 2, Income: decimal.RequireFromString("20"), Expense: decimal.RequireFromString("100")},
-	}
-
-	got, err := svc.Month(t.Context(), userA, "2026-10")
-	if err != nil {
-		t.Fatalf("Month: %v", err)
-	}
-
-	for i, want := range []string{"49844.5", "-80"} {
-		if net := got.Totals[i].Net(); !net.Equal(decimal.RequireFromString(want)) {
-			t.Errorf("%s net = %s, want %s", got.Totals[i].Currency, net, want)
+func TestTotalNetIsIncomeMinusExpense(t *testing.T) {
+	for _, tc := range []struct{ income, expense, want string }{
+		{"50000", "155.5", "49844.5"},
+		{"20", "100", "-80"},
+		{"12.34", "0", "12.34"},
+	} {
+		total := Total{Income: decimal.RequireFromString(tc.income), Expense: decimal.RequireFromString(tc.expense)}
+		if net := total.Net(); !net.Equal(decimal.RequireFromString(tc.want)) {
+			t.Errorf("%s - %s = %s, want %s", tc.income, tc.expense, net, tc.want)
 		}
 	}
 }

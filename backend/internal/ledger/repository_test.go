@@ -14,16 +14,6 @@ import (
 	"nest-egg/backend/internal/platform/taipei"
 )
 
-func insertUser(t *testing.T, pool *pgxpool.Pool, email string) int64 {
-	t.Helper()
-	var id int64
-	err := pool.QueryRow(t.Context(), `INSERT INTO users (email, password_hash) VALUES ($1, 'x') RETURNING id`, email).Scan(&id)
-	if err != nil {
-		t.Fatalf("insert user %s: %v", email, err)
-	}
-	return id
-}
-
 type kindName struct {
 	kind Kind
 	name string
@@ -47,7 +37,7 @@ func TestRepositorySeedsCategoriesOnlyWhenUserHasNone(t *testing.T) {
 	pool := dbtest.Migrated(t)
 	repo := NewRepository(pool)
 	ctx := t.Context()
-	a := insertUser(t, pool, "a@example.com")
+	a := dbtest.InsertUser(t, pool, "a@example.com")
 
 	if err := repo.SeedCategories(ctx, a, testDefaults); err != nil {
 		t.Fatalf("first seed: %v", err)
@@ -69,7 +59,7 @@ func TestRepositorySeedsCategoriesOnlyWhenUserHasNone(t *testing.T) {
 func TestRepositorySeedCategoriesWhileAnotherSeedIsUncommitted(t *testing.T) {
 	pool := dbtest.Migrated(t)
 	ctx := t.Context()
-	a := insertUser(t, pool, "a@example.com")
+	a := dbtest.InsertUser(t, pool, "a@example.com")
 
 	tx, err := pool.Begin(ctx)
 	if err != nil {
@@ -121,7 +111,7 @@ func TestRepositoryCategoriesBelongToEachUser(t *testing.T) {
 	pool := dbtest.Migrated(t)
 	repo := NewRepository(pool)
 	ctx := t.Context()
-	a, b := insertUser(t, pool, "a@example.com"), insertUser(t, pool, "b@example.com")
+	a, b := dbtest.InsertUser(t, pool, "a@example.com"), dbtest.InsertUser(t, pool, "b@example.com")
 	for _, user := range []int64{a, b} {
 		if err := repo.SeedCategories(ctx, user, testDefaults); err != nil {
 			t.Fatalf("seed user %d: %v", user, err)
@@ -148,10 +138,15 @@ func TestRepositoryCategoriesBelongToEachUser(t *testing.T) {
 	}
 }
 
-func seededUser(t *testing.T, pool *pgxpool.Pool, email string) (int64, []Category) {
+type seededUser struct {
+	id           int64
+	food, salary Category
+}
+
+func seedUser(t *testing.T, pool *pgxpool.Pool, email string) seededUser {
 	t.Helper()
 	repo := NewRepository(pool)
-	id := insertUser(t, pool, email)
+	id := dbtest.InsertUser(t, pool, email)
 	if err := repo.SeedCategories(t.Context(), id, defaultCategories); err != nil {
 		t.Fatalf("seed categories for %s: %v", email, err)
 	}
@@ -159,7 +154,22 @@ func seededUser(t *testing.T, pool *pgxpool.Pool, email string) (int64, []Catego
 	if err != nil {
 		t.Fatal(err)
 	}
-	return id, categories
+	return seededUser{
+		id:     id,
+		food:   findCategory(t, categories, KindExpense, "飲食"),
+		salary: findCategory(t, categories, KindIncome, "薪水"),
+	}
+}
+
+func findCategory(t *testing.T, categories []Category, kind Kind, name string) Category {
+	t.Helper()
+	for _, c := range categories {
+		if c.Kind == kind && c.Name == name {
+			return c
+		}
+	}
+	t.Fatalf("no %s category named %s in %v", kind, name, categories)
+	return Category{}
 }
 
 func mustCreate(t *testing.T, repo *Repository, userID int64, v EntryValues) int64 {
@@ -171,17 +181,20 @@ func mustCreate(t *testing.T, repo *Repository, userID int64, v EntryValues) int
 	return id
 }
 
+func twdEntry(category Category, date, amount string) EntryValues {
+	return EntryValues{OccurredOn: taipeiDate(date), CategoryID: category.ID, Currency: "TWD", Amount: decimal.RequireFromString(amount)}
+}
+
 func TestRepositoryCategoryOnlyFindsTheUsersOwn(t *testing.T) {
 	pool := dbtest.Migrated(t)
 	repo := NewRepository(pool)
-	a, aCategories := seededUser(t, pool, "a@example.com")
-	b, _ := seededUser(t, pool, "b@example.com")
+	a, b := seedUser(t, pool, "a@example.com"), seedUser(t, pool, "b@example.com")
 
-	got, err := repo.Category(t.Context(), a, aCategories[0].ID)
-	if err != nil || got != aCategories[0] {
-		t.Errorf("A's own category = %+v, %v; want %+v", got, err, aCategories[0])
+	got, err := repo.Category(t.Context(), a.id, a.food.ID)
+	if err != nil || got != a.food {
+		t.Errorf("A's own category = %+v, %v; want %+v", got, err, a.food)
 	}
-	if _, err := repo.Category(t.Context(), b, aCategories[0].ID); !errors.Is(err, apperr.ErrNotFound) {
+	if _, err := repo.Category(t.Context(), b.id, a.food.ID); !errors.Is(err, apperr.ErrNotFound) {
 		t.Errorf("B asking for A's category: error = %v, want apperr.ErrNotFound", err)
 	}
 }
@@ -189,49 +202,50 @@ func TestRepositoryCategoryOnlyFindsTheUsersOwn(t *testing.T) {
 func TestRepositoryCreateAndGetEntry(t *testing.T) {
 	pool := dbtest.Migrated(t)
 	repo := NewRepository(pool)
-	a, categories := seededUser(t, pool, "a@example.com")
-	food, salary := categories[0], categories[4]
-
-	twd := mustCreate(t, repo, a, EntryValues{
-		OccurredOn: taipeiDate("2026-10-23"), CategoryID: food.ID, Currency: "TWD",
+	a := seedUser(t, pool, "a@example.com")
+	lunch := EntryValues{
+		OccurredOn: taipeiDate("2026-10-23"), CategoryID: a.food.ID, Currency: "TWD",
 		Amount: decimal.RequireFromString("120"), Note: "午餐",
-	})
-	usd := mustCreate(t, repo, a, EntryValues{
-		OccurredOn: taipeiDate("2026-10-24"), CategoryID: salary.ID, Currency: "USD", Amount: decimal.RequireFromString("12.34"),
+	}
+	dividend := EntryValues{
+		OccurredOn: taipeiDate("2026-10-24"), CategoryID: a.salary.ID, Currency: "USD", Amount: decimal.RequireFromString("12.34"),
 		MarketRate: &MarketRate{Value: decimal.RequireFromString("32.508"), Date: taipeiDate("2026-10-23")},
-	})
-
-	got, err := repo.Entry(t.Context(), a, twd)
-	if err != nil {
-		t.Fatalf("Entry(TWD): %v", err)
-	}
-	if got.ID != twd || !got.OccurredOn.Equal(taipeiDate("2026-10-23")) || got.OccurredOn.Location() != taipei.Location ||
-		got.Category != food || got.Currency != "TWD" || got.MinorUnit != 2 ||
-		!got.Amount.Equal(decimal.RequireFromString("120")) || got.MarketRate != nil || got.Note != "午餐" {
-		t.Errorf("TWD entry = %+v, want the 2026-10-23 TWD 120 飲食 entry", got)
 	}
 
-	got, err = repo.Entry(t.Context(), a, usd)
-	if err != nil {
-		t.Fatalf("Entry(USD): %v", err)
-	}
-	if got.Category != salary || got.Currency != "USD" || !got.Amount.Equal(decimal.RequireFromString("12.34")) || got.Note != "" {
-		t.Errorf("USD entry = %+v, want the USD 12.34 薪水 entry", got)
-	}
-	wantMarketRate(t, got.MarketRate, "32.508", "2026-10-23")
-	if got.MarketRate != nil && got.MarketRate.Date.Location() != taipei.Location {
-		t.Errorf("market rate date location = %v, want Asia/Taipei", got.MarketRate.Date.Location())
+	for name, tc := range map[string]struct {
+		values EntryValues
+		want   Entry
+	}{
+		"TWD": {lunch, Entry{
+			OccurredOn: lunch.OccurredOn, Category: a.food, Currency: "TWD", MinorUnit: 2, Amount: lunch.Amount, Note: "午餐",
+		}},
+		"USD": {dividend, Entry{
+			OccurredOn: dividend.OccurredOn, Category: a.salary, Currency: "USD", MinorUnit: 2, Amount: dividend.Amount,
+			MarketRate: dividend.MarketRate,
+		}},
+	} {
+		id := mustCreate(t, repo, a.id, tc.values)
+		got, err := repo.Entry(t.Context(), a.id, id)
+		if err != nil {
+			t.Fatalf("Entry(%s): %v", name, err)
+		}
+		if got.ID != id {
+			t.Errorf("%s entry ID = %d, want %d", name, got.ID, id)
+		}
+		wantEntry(t, got, tc.want)
+		if got.MarketRate != nil && got.MarketRate.Date.Location() != taipei.Location {
+			t.Errorf("%s market rate date location = %v, want Asia/Taipei", name, got.MarketRate.Date.Location())
+		}
 	}
 }
 
 func TestRepositoryEntryOnlyFindsTheUsersOwn(t *testing.T) {
 	pool := dbtest.Migrated(t)
 	repo := NewRepository(pool)
-	a, categories := seededUser(t, pool, "a@example.com")
-	b, _ := seededUser(t, pool, "b@example.com")
-	id := mustCreate(t, repo, a, EntryValues{OccurredOn: taipeiDate("2026-10-23"), CategoryID: categories[0].ID, Currency: "TWD", Amount: decimal.RequireFromString("120")})
+	a, b := seedUser(t, pool, "a@example.com"), seedUser(t, pool, "b@example.com")
+	id := mustCreate(t, repo, a.id, twdEntry(a.food, "2026-10-23", "120"))
 
-	for name, tc := range map[string]struct{ user, id int64 }{"B reads A's entry": {b, id}, "missing id": {a, id + 1000}} {
+	for name, tc := range map[string]struct{ user, id int64 }{"B reads A's entry": {b.id, id}, "missing id": {a.id, id + 1000}} {
 		if _, err := repo.Entry(t.Context(), tc.user, tc.id); !errors.Is(err, apperr.ErrNotFound) {
 			t.Errorf("%s: error = %v, want apperr.ErrNotFound", name, err)
 		}
@@ -241,60 +255,56 @@ func TestRepositoryEntryOnlyFindsTheUsersOwn(t *testing.T) {
 func TestRepositoryUpdateEntry(t *testing.T) {
 	pool := dbtest.Migrated(t)
 	repo := NewRepository(pool)
-	a, aCategories := seededUser(t, pool, "a@example.com")
-	b, bCategories := seededUser(t, pool, "b@example.com")
-	original := EntryValues{OccurredOn: taipeiDate("2026-10-23"), CategoryID: aCategories[0].ID, Currency: "TWD", Amount: decimal.RequireFromString("120")}
-	id := mustCreate(t, repo, a, original)
+	a, b := seedUser(t, pool, "a@example.com"), seedUser(t, pool, "b@example.com")
+	original := twdEntry(a.food, "2026-10-23", "120")
+	id := mustCreate(t, repo, a.id, original)
 
-	stolen := EntryValues{OccurredOn: taipeiDate("2026-10-01"), CategoryID: bCategories[0].ID, Currency: "TWD", Amount: decimal.RequireFromString("999")}
-	if err := repo.UpdateEntry(t.Context(), b, id, stolen); !errors.Is(err, apperr.ErrNotFound) {
+	if err := repo.UpdateEntry(t.Context(), b.id, id, twdEntry(b.food, "2026-10-01", "999")); !errors.Is(err, apperr.ErrNotFound) {
 		t.Errorf("B updates A's entry: error = %v, want apperr.ErrNotFound", err)
 	}
-	if err := repo.UpdateEntry(t.Context(), a, id+1000, original); !errors.Is(err, apperr.ErrNotFound) {
+	if err := repo.UpdateEntry(t.Context(), a.id, id+1000, original); !errors.Is(err, apperr.ErrNotFound) {
 		t.Errorf("update a missing id: error = %v, want apperr.ErrNotFound", err)
 	}
-	if got, _ := repo.Entry(t.Context(), a, id); !got.Amount.Equal(decimal.RequireFromString("120")) {
+	if got, _ := repo.Entry(t.Context(), a.id, id); !got.Amount.Equal(decimal.RequireFromString("120")) {
 		t.Errorf("A's amount after B's update = %s, want 120", got.Amount)
 	}
 
 	changed := EntryValues{
-		OccurredOn: taipeiDate("2026-10-20"), CategoryID: aCategories[4].ID, Currency: "USD", Amount: decimal.RequireFromString("50"),
+		OccurredOn: taipeiDate("2026-10-20"), CategoryID: a.salary.ID, Currency: "USD", Amount: decimal.RequireFromString("50"),
 		MarketRate: &MarketRate{Value: decimal.RequireFromString("32.617"), Date: taipeiDate("2026-10-20")}, Note: "股息",
 	}
-	if err := repo.UpdateEntry(t.Context(), a, id, changed); err != nil {
+	if err := repo.UpdateEntry(t.Context(), a.id, id, changed); err != nil {
 		t.Fatalf("A updates own entry: %v", err)
 	}
-	got, err := repo.Entry(t.Context(), a, id)
+	got, err := repo.Entry(t.Context(), a.id, id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !got.OccurredOn.Equal(taipeiDate("2026-10-20")) || got.Category != aCategories[4] || got.Currency != "USD" ||
-		!got.Amount.Equal(decimal.RequireFromString("50")) || got.Note != "股息" {
-		t.Errorf("updated entry = %+v, want the 2026-10-20 USD 50 薪水 entry", got)
-	}
-	wantMarketRate(t, got.MarketRate, "32.617", "2026-10-20")
+	wantEntry(t, got, Entry{
+		OccurredOn: changed.OccurredOn, Category: a.salary, Currency: "USD", MinorUnit: 2,
+		Amount: changed.Amount, MarketRate: changed.MarketRate, Note: "股息",
+	})
 }
 
 func TestRepositoryDeleteEntry(t *testing.T) {
 	pool := dbtest.Migrated(t)
 	repo := NewRepository(pool)
-	a, categories := seededUser(t, pool, "a@example.com")
-	b, _ := seededUser(t, pool, "b@example.com")
-	id := mustCreate(t, repo, a, EntryValues{OccurredOn: taipeiDate("2026-10-23"), CategoryID: categories[0].ID, Currency: "TWD", Amount: decimal.RequireFromString("120")})
+	a, b := seedUser(t, pool, "a@example.com"), seedUser(t, pool, "b@example.com")
+	id := mustCreate(t, repo, a.id, twdEntry(a.food, "2026-10-23", "120"))
 
-	if err := repo.DeleteEntry(t.Context(), b, id); !errors.Is(err, apperr.ErrNotFound) {
+	if err := repo.DeleteEntry(t.Context(), b.id, id); !errors.Is(err, apperr.ErrNotFound) {
 		t.Errorf("B deletes A's entry: error = %v, want apperr.ErrNotFound", err)
 	}
-	if _, err := repo.Entry(t.Context(), a, id); err != nil {
+	if _, err := repo.Entry(t.Context(), a.id, id); err != nil {
 		t.Errorf("A's entry after B's delete: %v, want it to still exist", err)
 	}
-	if err := repo.DeleteEntry(t.Context(), a, id); err != nil {
+	if err := repo.DeleteEntry(t.Context(), a.id, id); err != nil {
 		t.Fatalf("A deletes own entry: %v", err)
 	}
-	if _, err := repo.Entry(t.Context(), a, id); !errors.Is(err, apperr.ErrNotFound) {
+	if _, err := repo.Entry(t.Context(), a.id, id); !errors.Is(err, apperr.ErrNotFound) {
 		t.Errorf("entry after delete: error = %v, want apperr.ErrNotFound", err)
 	}
-	if err := repo.DeleteEntry(t.Context(), a, id); !errors.Is(err, apperr.ErrNotFound) {
+	if err := repo.DeleteEntry(t.Context(), a.id, id); !errors.Is(err, apperr.ErrNotFound) {
 		t.Errorf("deleting twice: error = %v, want apperr.ErrNotFound", err)
 	}
 }
@@ -302,19 +312,15 @@ func TestRepositoryDeleteEntry(t *testing.T) {
 func TestRepositoryEntriesInAMonth(t *testing.T) {
 	pool := dbtest.Migrated(t)
 	repo := NewRepository(pool)
-	a, aCategories := seededUser(t, pool, "a@example.com")
-	b, bCategories := seededUser(t, pool, "b@example.com")
-	create := func(user int64, category Category, date string) int64 {
-		return mustCreate(t, repo, user, EntryValues{OccurredOn: taipeiDate(date), CategoryID: category.ID, Currency: "TWD", Amount: decimal.RequireFromString("1")})
-	}
-	create(a, aCategories[0], "2026-09-30")
-	firstOct1 := create(a, aCategories[0], "2026-10-01")
-	secondOct1 := create(a, aCategories[0], "2026-10-01")
-	oct23 := create(a, aCategories[0], "2026-10-23")
-	create(a, aCategories[0], "2026-11-01")
-	create(b, bCategories[0], "2026-10-15")
+	a, b := seedUser(t, pool, "a@example.com"), seedUser(t, pool, "b@example.com")
+	mustCreate(t, repo, a.id, twdEntry(a.food, "2026-09-30", "1"))
+	firstOct1 := mustCreate(t, repo, a.id, twdEntry(a.food, "2026-10-01", "1"))
+	secondOct1 := mustCreate(t, repo, a.id, twdEntry(a.food, "2026-10-01", "1"))
+	oct23 := mustCreate(t, repo, a.id, twdEntry(a.food, "2026-10-23", "1"))
+	mustCreate(t, repo, a.id, twdEntry(a.food, "2026-11-01", "1"))
+	mustCreate(t, repo, b.id, twdEntry(b.food, "2026-10-15", "1"))
 
-	got, err := repo.Entries(t.Context(), a, taipeiDate("2026-10-01"), taipeiDate("2026-11-01"))
+	got, err := repo.Entries(t.Context(), a.id, taipeiDate("2026-10-01"), taipeiDate("2026-11-01"))
 	if err != nil {
 		t.Fatalf("Entries: %v", err)
 	}
@@ -331,21 +337,20 @@ func TestRepositoryEntriesInAMonth(t *testing.T) {
 func TestRepositoryTotals(t *testing.T) {
 	pool := dbtest.Migrated(t)
 	repo := NewRepository(pool)
-	a, aCategories := seededUser(t, pool, "a@example.com")
-	b, bCategories := seededUser(t, pool, "b@example.com")
-	aFood, aSalary := aCategories[0], aCategories[4]
-	create := func(user int64, category Category, date, cur, amount string) {
-		mustCreate(t, repo, user, EntryValues{OccurredOn: taipeiDate(date), CategoryID: category.ID, Currency: cur, Amount: decimal.RequireFromString(amount)})
+	a, b := seedUser(t, pool, "a@example.com"), seedUser(t, pool, "b@example.com")
+	for _, v := range []EntryValues{
+		twdEntry(a.salary, "2026-10-05", "50000"),
+		twdEntry(a.food, "2026-10-23", "120"),
+		twdEntry(a.food, "2026-10-31", "35.5"),
+		{OccurredOn: taipeiDate("2026-10-10"), CategoryID: a.salary.ID, Currency: "USD", Amount: decimal.RequireFromString("12.34")},
+		twdEntry(a.food, "2026-09-30", "1000"),
+		twdEntry(a.food, "2026-11-01", "1000"),
+	} {
+		mustCreate(t, repo, a.id, v)
 	}
-	create(a, aSalary, "2026-10-05", "TWD", "50000")
-	create(a, aFood, "2026-10-23", "TWD", "120")
-	create(a, aFood, "2026-10-31", "TWD", "35.5")
-	create(a, aSalary, "2026-10-10", "USD", "12.34")
-	create(a, aFood, "2026-09-30", "TWD", "1000")
-	create(a, aFood, "2026-11-01", "TWD", "1000")
-	create(b, bCategories[0], "2026-10-15", "TWD", "777")
+	mustCreate(t, repo, b.id, twdEntry(b.food, "2026-10-15", "777"))
 
-	got, err := repo.Totals(t.Context(), a, taipeiDate("2026-10-01"), taipeiDate("2026-11-01"))
+	got, err := repo.Totals(t.Context(), a.id, taipeiDate("2026-10-01"), taipeiDate("2026-11-01"))
 	if err != nil {
 		t.Fatalf("Totals: %v", err)
 	}
@@ -356,8 +361,11 @@ func TestRepositoryTotals(t *testing.T) {
 	}
 	for i, w := range want {
 		g := got[i]
-		if g.Currency != w.currency || g.MinorUnit != 2 || !g.Income.Equal(decimal.RequireFromString(w.income)) || !g.Expense.Equal(decimal.RequireFromString(w.expense)) {
-			t.Errorf("totals[%d] = %s income %s expense %s, want %s income %s expense %s", i, g.Currency, g.Income, g.Expense, w.currency, w.income, w.expense)
+		if g.Currency != w.currency || g.MinorUnit != 2 {
+			t.Errorf("totals[%d] currency = %s with %d decimals, want %s with 2", i, g.Currency, g.MinorUnit, w.currency)
+		}
+		if !g.Income.Equal(decimal.RequireFromString(w.income)) || !g.Expense.Equal(decimal.RequireFromString(w.expense)) {
+			t.Errorf("%s income %s expense %s, want income %s expense %s", g.Currency, g.Income, g.Expense, w.income, w.expense)
 		}
 	}
 }
@@ -365,13 +373,13 @@ func TestRepositoryTotals(t *testing.T) {
 func TestRepositoryEmptyMonth(t *testing.T) {
 	pool := dbtest.Migrated(t)
 	repo := NewRepository(pool)
-	a, _ := seededUser(t, pool, "a@example.com")
+	a := seedUser(t, pool, "a@example.com")
 
-	entries, err := repo.Entries(t.Context(), a, taipeiDate("2026-10-01"), taipeiDate("2026-11-01"))
+	entries, err := repo.Entries(t.Context(), a.id, taipeiDate("2026-10-01"), taipeiDate("2026-11-01"))
 	if err != nil || len(entries) != 0 {
 		t.Errorf("Entries = %v, %v; want none", entries, err)
 	}
-	totals, err := repo.Totals(t.Context(), a, taipeiDate("2026-10-01"), taipeiDate("2026-11-01"))
+	totals, err := repo.Totals(t.Context(), a.id, taipeiDate("2026-10-01"), taipeiDate("2026-11-01"))
 	if err != nil || len(totals) != 0 {
 		t.Errorf("Totals = %v, %v; want none", totals, err)
 	}

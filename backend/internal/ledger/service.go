@@ -226,51 +226,49 @@ const maxNoteLength = 200
 var amountPattern = regexp.MustCompile(`^[0-9]{1,16}(\.[0-9]+)?$`)
 
 func (s *Service) validate(ctx context.Context, userID int64, in EntryInput) (EntryValues, error) {
-	fields := map[string]string{}
-	v := EntryValues{CategoryID: in.CategoryID, Currency: in.Currency, Note: in.Note}
-
-	date, err := taipei.ParseDate(in.OccurredOn)
-	switch {
-	case err != nil:
-		fields["occurred_on"] = "must be a date in YYYY-MM-DD format"
-	case date.After(taipei.Today(s.now())):
-		fields["occurred_on"] = "must not be in the future"
-	default:
-		v.OccurredOn = date
-	}
-
-	problem, err := s.categoryProblem(ctx, userID, in.CategoryID)
+	date, dateProblem := s.parseOccurredOn(in.OccurredOn)
+	categoryProblem, err := s.categoryProblem(ctx, userID, in.CategoryID)
 	if err != nil {
 		return EntryValues{}, err
 	}
-	if problem != "" {
-		fields["category_id"] = problem
-	}
-
-	cur, problem, err := s.currency(ctx, in.Currency)
+	cur, currencyProblem, err := s.lookupCurrency(ctx, in.Currency)
 	if err != nil {
 		return EntryValues{}, err
 	}
-	if problem != "" {
-		fields["currency"] = problem
-	}
+	amount, amountProblem := parseAmount(in.Amount, cur)
 
-	v.Amount, problem = parseAmount(in.Amount)
-	if problem == "" && cur.Code != "" && decimalPlaces(in.Amount) > cur.MinorUnit {
-		problem = fmt.Sprintf("must have at most %d decimal places", cur.MinorUnit)
-	}
-	if problem != "" {
-		fields["amount"] = problem
-	}
-
-	if utf8.RuneCountInString(in.Note) > maxNoteLength {
-		fields["note"] = fmt.Sprintf("must be at most %d characters", maxNoteLength)
-	}
-
+	fields := nonEmpty(map[string]string{
+		"occurred_on": dateProblem,
+		"category_id": categoryProblem,
+		"currency":    currencyProblem,
+		"amount":      amountProblem,
+		"note":        noteProblem(in.Note),
+	})
 	if len(fields) > 0 {
 		return EntryValues{}, &apperr.ValidationError{Fields: fields}
 	}
-	return v, nil
+	return EntryValues{OccurredOn: date, CategoryID: in.CategoryID, Currency: in.Currency, Amount: amount, Note: in.Note}, nil
+}
+
+func nonEmpty(problems map[string]string) map[string]string {
+	fields := map[string]string{}
+	for field, problem := range problems {
+		if problem != "" {
+			fields[field] = problem
+		}
+	}
+	return fields
+}
+
+func (s *Service) parseOccurredOn(raw string) (time.Time, string) {
+	date, err := taipei.ParseDate(raw)
+	switch {
+	case err != nil:
+		return time.Time{}, "must be a date in YYYY-MM-DD format"
+	case date.After(taipei.Today(s.now())):
+		return time.Time{}, "must not be in the future"
+	}
+	return date, ""
 }
 
 func (s *Service) categoryProblem(ctx context.Context, userID, id int64) (string, error) {
@@ -287,29 +285,39 @@ func (s *Service) categoryProblem(ctx context.Context, userID, id int64) (string
 	return "", nil
 }
 
-func (s *Service) currency(ctx context.Context, code string) (currency.Currency, string, error) {
+func (s *Service) lookupCurrency(ctx context.Context, code string) (*currency.Currency, string, error) {
 	if code == "" {
-		return currency.Currency{}, "required", nil
+		return nil, "required", nil
 	}
 	c, err := s.currencies.Get(ctx, code)
 	switch {
 	case errors.Is(err, apperr.ErrNotFound):
-		return currency.Currency{}, "unknown currency", nil
+		return nil, "unknown currency", nil
 	case err != nil:
-		return currency.Currency{}, "", fmt.Errorf("check currency: %w", err)
+		return nil, "", fmt.Errorf("check currency: %w", err)
 	}
-	return c, "", nil
+	return &c, "", nil
 }
 
-func parseAmount(s string) (decimal.Decimal, string) {
-	if !amountPattern.MatchString(s) {
+func parseAmount(raw string, cur *currency.Currency) (decimal.Decimal, string) {
+	if !amountPattern.MatchString(raw) {
 		return decimal.Decimal{}, "must be a number like 120 or 32.5"
 	}
-	d, err := decimal.NewFromString(s)
-	if err != nil || !d.IsPositive() {
+	amount := decimal.RequireFromString(raw)
+	switch {
+	case !amount.IsPositive():
 		return decimal.Decimal{}, "must be greater than 0"
+	case cur != nil && decimalPlaces(raw) > cur.MinorUnit:
+		return decimal.Decimal{}, fmt.Sprintf("must have at most %d decimal places", cur.MinorUnit)
 	}
-	return d, ""
+	return amount, ""
+}
+
+func noteProblem(note string) string {
+	if utf8.RuneCountInString(note) > maxNoteLength {
+		return fmt.Sprintf("must be at most %d characters", maxNoteLength)
+	}
+	return ""
 }
 
 func decimalPlaces(amount string) int {

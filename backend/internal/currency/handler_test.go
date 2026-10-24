@@ -31,7 +31,7 @@ func (f fakeStore) Exists(_ context.Context, code string) (bool, error) {
 func (f fakeStore) Get(_ context.Context, code string) (Currency, error) {
 	for _, c := range f.currencies {
 		if c.Code == code {
-			return c, f.err
+			return c, nil
 		}
 	}
 	return Currency{}, apperr.ErrNotFound

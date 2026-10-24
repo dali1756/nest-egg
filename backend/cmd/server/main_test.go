@@ -419,7 +419,7 @@ func (f fakeCurrencyStore) Get(ctx context.Context, code string) (currency.Curre
 }
 
 // emptyLedgerStore 是沒有任何資料的 ledger.Store，只用來確認路徑有接上 handler
-type emptyLedgerStore struct{ ledger.Store }
+type emptyLedgerStore struct{}
 
 func (emptyLedgerStore) SeedCategories(context.Context, int64, []ledger.Category) error { return nil }
 
@@ -436,6 +436,14 @@ func (emptyLedgerStore) Entry(context.Context, int64, int64) (ledger.Entry, erro
 }
 
 func (emptyLedgerStore) DeleteEntry(context.Context, int64, int64) error { return apperr.ErrNotFound }
+
+func (emptyLedgerStore) CreateEntry(context.Context, int64, ledger.EntryValues) (int64, error) {
+	return 0, apperr.ErrNotFound
+}
+
+func (emptyLedgerStore) UpdateEntry(context.Context, int64, int64, ledger.EntryValues) error {
+	return apperr.ErrNotFound
+}
 
 func (emptyLedgerStore) Entries(context.Context, int64, time.Time, time.Time) ([]ledger.Entry, error) {
 	return nil, nil

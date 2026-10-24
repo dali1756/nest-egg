@@ -36,7 +36,7 @@ func addRoutes(public, protected *http.ServeMux, h handlers) {
 	protected.Handle("POST /api/auth/password/change", h.limit(h.auth.ChangePassword))
 	protected.Handle("GET /api/currencies", httpx.Handler(h.currency.List))
 	protected.Handle("GET /api/rates", httpx.Handler(h.rate.Get))
-	protected.Handle("GET /api/categories", httpx.Handler(h.ledger.Categories))
+	protected.Handle("GET /api/categories", httpx.Handler(h.ledger.ListCategories))
 	protected.Handle("GET /api/ledger-entries", httpx.Handler(h.ledger.ListEntries))
 	protected.Handle("POST /api/ledger-entries", httpx.Handler(h.ledger.CreateEntry))
 	protected.Handle("GET /api/ledger-entries/{id}", httpx.Handler(h.ledger.GetEntry))

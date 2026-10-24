@@ -49,7 +49,7 @@ type categoriesResponse struct {
 	Categories []categoryResponse `json:"categories"`
 }
 
-func (h *Handler) Categories(w http.ResponseWriter, r *http.Request) error {
+func (h *Handler) ListCategories(w http.ResponseWriter, r *http.Request) error {
 	userID, err := currentUserID(r)
 	if err != nil {
 		return err
@@ -119,6 +119,16 @@ type totalResponse struct {
 	Net      string `json:"net"`
 }
 
+func toTotalResponse(t Total) totalResponse {
+	places := int32(t.MinorUnit)
+	return totalResponse{
+		Currency: t.Currency,
+		Income:   t.Income.StringFixed(places),
+		Expense:  t.Expense.StringFixed(places),
+		Net:      t.Net().StringFixed(places),
+	}
+}
+
 type monthResponse struct {
 	Month   string          `json:"month"`
 	Entries []entryResponse `json:"entries"`
@@ -143,13 +153,7 @@ func (h *Handler) ListEntries(w http.ResponseWriter, r *http.Request) error {
 		resp.Entries = append(resp.Entries, toEntryResponse(e))
 	}
 	for _, t := range month.Totals {
-		places := int32(t.MinorUnit)
-		resp.Totals = append(resp.Totals, totalResponse{
-			Currency: t.Currency,
-			Income:   t.Income.StringFixed(places),
-			Expense:  t.Expense.StringFixed(places),
-			Net:      t.Net().StringFixed(places),
-		})
+		resp.Totals = append(resp.Totals, toTotalResponse(t))
 	}
 	return httpx.WriteJSON(w, http.StatusOK, resp)
 }

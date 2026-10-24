@@ -23,7 +23,7 @@ const insertEntry = `INSERT INTO ledger_entries (user_id, occurred_on, category_
 
 func TestLedgerEntryCannotUseAnotherUsersCategory(t *testing.T) {
 	pool := dbtest.Migrated(t)
-	a, b := insertUser(t, pool, "a@example.com"), insertUser(t, pool, "b@example.com")
+	a, b := dbtest.InsertUser(t, pool, "a@example.com"), dbtest.InsertUser(t, pool, "b@example.com")
 	aCategory := insertExpenseCategory(t, pool, a)
 
 	_, err := pool.Exec(t.Context(), insertEntry, b, aCategory, "120")
@@ -32,7 +32,7 @@ func TestLedgerEntryCannotUseAnotherUsersCategory(t *testing.T) {
 
 func TestLedgerEntryAmountMustBePositive(t *testing.T) {
 	pool := dbtest.Migrated(t)
-	a := insertUser(t, pool, "a@example.com")
+	a := dbtest.InsertUser(t, pool, "a@example.com")
 	category := insertExpenseCategory(t, pool, a)
 
 	for _, amount := range []string{"0", "-1"} {
@@ -44,7 +44,7 @@ func TestLedgerEntryAmountMustBePositive(t *testing.T) {
 func TestLedgerEntryMarketRateAndDateComeTogether(t *testing.T) {
 	pool := dbtest.Migrated(t)
 	ctx := t.Context()
-	a := insertUser(t, pool, "a@example.com")
+	a := dbtest.InsertUser(t, pool, "a@example.com")
 	category := insertExpenseCategory(t, pool, a)
 	const insert = `INSERT INTO ledger_entries (user_id, occurred_on, category_id, currency, amount, market_rate, market_rate_date)
 		VALUES ($1, '2026-10-23', $2, 'USD', 10, $3, $4)`
@@ -72,7 +72,7 @@ func TestLedgerEntryMarketRateAndDateComeTogether(t *testing.T) {
 func TestLedgerEntryNoteDefaultsToEmptyAndIsAtMost200Characters(t *testing.T) {
 	pool := dbtest.Migrated(t)
 	ctx := t.Context()
-	a := insertUser(t, pool, "a@example.com")
+	a := dbtest.InsertUser(t, pool, "a@example.com")
 	category := insertExpenseCategory(t, pool, a)
 
 	var note string
@@ -94,7 +94,7 @@ func TestLedgerEntryNoteDefaultsToEmptyAndIsAtMost200Characters(t *testing.T) {
 func TestLedgerDataIsDeletedWithUser(t *testing.T) {
 	pool := dbtest.Migrated(t)
 	ctx := t.Context()
-	a := insertUser(t, pool, "a@example.com")
+	a := dbtest.InsertUser(t, pool, "a@example.com")
 	category := insertExpenseCategory(t, pool, a)
 	if _, err := pool.Exec(ctx, insertEntry, a, category, "120"); err != nil {
 		t.Fatalf("insert entry: %v", err)

@@ -8,20 +8,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"nest-egg/backend/internal/platform/db/dbtest"
 )
-
-func insertUser(t *testing.T, pool *pgxpool.Pool, email string) int64 {
-	t.Helper()
-	var id int64
-	err := pool.QueryRow(t.Context(), `INSERT INTO users (email, password_hash) VALUES ($1, 'x') RETURNING id`, email).Scan(&id)
-	if err != nil {
-		t.Fatalf("insert user %s: %v", email, err)
-	}
-	return id
-}
 
 func wantPgError(t *testing.T, err error, code, what string) {
 	t.Helper()
@@ -36,7 +25,7 @@ const insertCategory = `INSERT INTO categories (user_id, kind, name, position) V
 func TestCategoryNameIsUniquePerUserAndKind(t *testing.T) {
 	pool := dbtest.Migrated(t)
 	ctx := t.Context()
-	a, b := insertUser(t, pool, "a@example.com"), insertUser(t, pool, "b@example.com")
+	a, b := dbtest.InsertUser(t, pool, "a@example.com"), dbtest.InsertUser(t, pool, "b@example.com")
 
 	if _, err := pool.Exec(ctx, insertCategory, a, "expense", "飲食"); err != nil {
 		t.Fatalf("first insert: %v", err)
@@ -56,7 +45,7 @@ func TestCategoryNameIsUniquePerUserAndKind(t *testing.T) {
 
 func TestCategoryKindIsIncomeOrExpense(t *testing.T) {
 	pool := dbtest.Migrated(t)
-	a := insertUser(t, pool, "a@example.com")
+	a := dbtest.InsertUser(t, pool, "a@example.com")
 
 	_, err := pool.Exec(t.Context(), insertCategory, a, "transfer", "轉帳")
 	wantPgError(t, err, "23514", "kind transfer")
@@ -65,7 +54,7 @@ func TestCategoryKindIsIncomeOrExpense(t *testing.T) {
 func TestCategoryNameIsOneToTwentyCharacters(t *testing.T) {
 	pool := dbtest.Migrated(t)
 	ctx := t.Context()
-	a := insertUser(t, pool, "a@example.com")
+	a := dbtest.InsertUser(t, pool, "a@example.com")
 
 	if _, err := pool.Exec(ctx, insertCategory, a, "expense", strings.Repeat("飲", 20)); err != nil {
 		t.Errorf("20-character name: %v, want it to be allowed", err)

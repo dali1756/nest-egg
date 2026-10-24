@@ -11,24 +11,29 @@ import (
 	"nest-egg/backend/internal/rate"
 )
 
-type fakeStore struct {
-	categories  map[int64][]Category
-	entries     map[int64]fakeEntry
-	nextID      int64
-	nextEntryID int64
-	err         error
-	totals      []Total
-	monthCalls  []monthCall
-}
+var (
+	errStore      = errors.New("store failed")
+	errRateLookup = errors.New("rate lookup failed")
+)
 
-type monthCall struct {
-	userID   int64
-	from, to time.Time
+type fakeStore struct {
+	categories     map[int64][]Category
+	entries        map[int64]fakeEntry
+	nextCategoryID int64
+	nextEntryID    int64
+	err            error
+	totals         []Total
+	monthCalls     []monthCall
 }
 
 type fakeEntry struct {
 	userID int64
 	Entry
+}
+
+type monthCall struct {
+	userID   int64
+	from, to time.Time
 }
 
 func newFakeStore() *fakeStore {
@@ -43,19 +48,23 @@ func (f *fakeStore) SeedCategories(_ context.Context, userID int64, categories [
 		return nil
 	}
 	for _, c := range categories {
-		f.nextID++
-		f.categories[userID] = append(f.categories[userID], Category{ID: f.nextID, Kind: c.Kind, Name: c.Name})
+		f.nextCategoryID++
+		f.categories[userID] = append(f.categories[userID], Category{ID: f.nextCategoryID, Kind: c.Kind, Name: c.Name})
 	}
 	return nil
 }
 
 func (f *fakeStore) Categories(_ context.Context, userID int64) ([]Category, error) {
-	return f.categories[userID], f.err
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.categories[userID], nil
 }
 
-var errStore = errors.New("store failed")
-
 func (f *fakeStore) Category(_ context.Context, userID, id int64) (Category, error) {
+	if f.err != nil {
+		return Category{}, f.err
+	}
 	for _, c := range f.categories[userID] {
 		if c.ID == id {
 			return c, nil
@@ -65,9 +74,6 @@ func (f *fakeStore) Category(_ context.Context, userID, id int64) (Category, err
 }
 
 func (f *fakeStore) CreateEntry(ctx context.Context, userID int64, v EntryValues) (int64, error) {
-	if f.err != nil {
-		return 0, f.err
-	}
 	category, err := f.Category(ctx, userID, v.CategoryID)
 	if err != nil {
 		return 0, err
@@ -81,11 +87,58 @@ func (f *fakeStore) CreateEntry(ctx context.Context, userID int64, v EntryValues
 }
 
 func (f *fakeStore) Entry(_ context.Context, userID, id int64) (Entry, error) {
+	if f.err != nil {
+		return Entry{}, f.err
+	}
 	e, ok := f.entries[id]
 	if !ok || e.userID != userID {
 		return Entry{}, fmt.Errorf("entry %d: %w", id, apperr.ErrNotFound)
 	}
 	return e.Entry, nil
+}
+
+func (f *fakeStore) UpdateEntry(ctx context.Context, userID, id int64, v EntryValues) error {
+	e, err := f.Entry(ctx, userID, id)
+	if err != nil {
+		return err
+	}
+	category, err := f.Category(ctx, userID, v.CategoryID)
+	if err != nil {
+		return err
+	}
+	e.OccurredOn, e.Category, e.Currency, e.Amount, e.MarketRate, e.Note = v.OccurredOn, category, v.Currency, v.Amount, v.MarketRate, v.Note
+	f.entries[id] = fakeEntry{userID: userID, Entry: e}
+	return nil
+}
+
+func (f *fakeStore) DeleteEntry(ctx context.Context, userID, id int64) error {
+	if _, err := f.Entry(ctx, userID, id); err != nil {
+		return err
+	}
+	delete(f.entries, id)
+	return nil
+}
+
+func (f *fakeStore) Entries(_ context.Context, userID int64, from, to time.Time) ([]Entry, error) {
+	f.monthCalls = append(f.monthCalls, monthCall{userID, from, to})
+	if f.err != nil {
+		return nil, f.err
+	}
+	var out []Entry
+	for _, e := range f.entries {
+		if e.userID == userID && !e.OccurredOn.Before(from) && e.OccurredOn.Before(to) {
+			out = append(out, e.Entry)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeStore) Totals(_ context.Context, userID int64, from, to time.Time) ([]Total, error) {
+	f.monthCalls = append(f.monthCalls, monthCall{userID, from, to})
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.totals, nil
 }
 
 type fakeCurrencies struct{}
@@ -120,42 +173,4 @@ func (f *fakeRates) On(_ context.Context, base, quote string, date time.Time) (r
 		return rate.Snapshot{}, fmt.Errorf("rate %s/%s: %w", base, quote, apperr.ErrNotFound)
 	}
 	return *f.snapshot, nil
-}
-
-func (f *fakeStore) UpdateEntry(ctx context.Context, userID, id int64, v EntryValues) error {
-	e, err := f.Entry(ctx, userID, id)
-	if err != nil {
-		return err
-	}
-	category, err := f.Category(ctx, userID, v.CategoryID)
-	if err != nil {
-		return err
-	}
-	e.OccurredOn, e.Category, e.Currency, e.Amount, e.MarketRate, e.Note = v.OccurredOn, category, v.Currency, v.Amount, v.MarketRate, v.Note
-	f.entries[id] = fakeEntry{userID: userID, Entry: e}
-	return nil
-}
-
-func (f *fakeStore) Entries(_ context.Context, userID int64, from, to time.Time) ([]Entry, error) {
-	f.monthCalls = append(f.monthCalls, monthCall{userID, from, to})
-	var out []Entry
-	for _, e := range f.entries {
-		if e.userID == userID && !e.OccurredOn.Before(from) && e.OccurredOn.Before(to) {
-			out = append(out, e.Entry)
-		}
-	}
-	return out, f.err
-}
-
-func (f *fakeStore) Totals(_ context.Context, userID int64, from, to time.Time) ([]Total, error) {
-	f.monthCalls = append(f.monthCalls, monthCall{userID, from, to})
-	return f.totals, f.err
-}
-
-func (f *fakeStore) DeleteEntry(ctx context.Context, userID, id int64) error {
-	if _, err := f.Entry(ctx, userID, id); err != nil {
-		return err
-	}
-	delete(f.entries, id)
-	return nil
 }

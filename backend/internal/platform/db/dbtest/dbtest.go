@@ -66,3 +66,13 @@ func testDatabaseURL(t *testing.T) string {
 	}
 	return url
 }
+
+func InsertUser(t *testing.T, pool *pgxpool.Pool, email string) int64 {
+	t.Helper()
+	var id int64
+	err := pool.QueryRow(t.Context(), `INSERT INTO users (email, password_hash) VALUES ($1, 'x') RETURNING id`, email).Scan(&id)
+	if err != nil {
+		t.Fatalf("insert user %s: %v", email, err)
+	}
+	return id
+}
