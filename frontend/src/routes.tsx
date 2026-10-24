@@ -2,7 +2,9 @@ import type { RouteObject } from 'react-router'
 import AppLayout from './components/AppLayout'
 import RequireAuth from './components/RequireAuth'
 import ChangePasswordPage from './pages/ChangePasswordPage'
+import EntryFormPage from './pages/EntryFormPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
+import LedgerPage from './pages/LedgerPage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
@@ -20,7 +22,10 @@ export const routes: RouteObject[] = [
       {
         Component: RequireAuth,
         children: [
-          { index: true, Component: StatusPage },
+          { index: true, Component: LedgerPage },
+          { path: 'status', Component: StatusPage },
+          { path: 'entries/new', Component: EntryFormPage },
+          { path: 'entries/:id', Component: EntryFormPage },
           { path: 'change-password', Component: ChangePasswordPage },
         ],
       },

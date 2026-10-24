@@ -1,23 +1,10 @@
 import type { ButtonHTMLAttributes } from 'react'
+import { buttonClassName, type ButtonStyle } from './buttonStyles'
 
-type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: 'primary' | 'quiet'
-  block?: boolean
-}
+type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & ButtonStyle
 
-const variants = {
-  primary: 'bg-primary text-primary-foreground enabled:hover:bg-primary-hover',
-  quiet: 'flex-none border border-border bg-card text-primary enabled:hover:border-primary',
-}
-
-function Button({ variant = 'primary', block = false, ...props }: ButtonProps) {
-  const size = block ? 'w-full px-4 py-2.75 text-md' : variant === 'quiet' ? 'px-3.5 py-1.5 text-sm' : 'px-4 py-2 text-sm'
-  return (
-    <button
-      className={`cursor-pointer rounded-control font-semibold transition-colors focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-default disabled:opacity-60 ${variants[variant]} ${size}`}
-      {...props}
-    />
-  )
+function Button({ variant, block, ...props }: ButtonProps) {
+  return <button className={buttonClassName({ variant, block })} {...props} />
 }
 
 export default Button

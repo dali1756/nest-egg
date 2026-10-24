@@ -13,13 +13,13 @@ async function fillRegister(email: string, password: string, confirm: string) {
   await user.click(screen.getByRole('button', { name: '註冊' }))
 }
 
-test('registers, logs in and shows the status page', async () => {
+test('registers, logs in and shows the ledger page', async () => {
   const backend = fakeBackend({ user: null })
   const { router } = renderApp('/register')
 
   await fillRegister('Me@Example.com', 'Passw0rd!', 'Passw0rd!')
 
-  expect(await screen.findByRole('heading', { name: '系統狀態' })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: '記帳' })).toBeInTheDocument()
   expect(router.state.location.pathname).toBe('/')
   const call = backend.calls.find((c) => c.path === '/api/auth/register')
   expect(call?.body).toEqual({ email: 'Me@Example.com', password: 'Passw0rd!', confirm_password: 'Passw0rd!' })

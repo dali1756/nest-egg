@@ -90,6 +90,11 @@ function UserMenu({ email }: { email: string }) {
             </Link>
           </li>
           <li>
+            <Link to="/status" className={itemClass} onClick={() => setOpen(false)}>
+              系統狀態
+            </Link>
+          </li>
+          <li>
             <button type="button" className={itemClass} onClick={() => mutation.mutate()} disabled={mutation.isPending}>
               登出
             </button>

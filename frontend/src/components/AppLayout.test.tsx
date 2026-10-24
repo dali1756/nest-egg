@@ -69,7 +69,7 @@ test('clicking outside closes the menu', async () => {
   renderApp('/')
   const { user, toggle } = await openMenu()
 
-  await user.click(screen.getByRole('heading', { level: 1, name: '系統狀態' }))
+  await user.click(await screen.findByRole('heading', { level: 1, name: '記帳' }))
 
   expect(toggle).toHaveAttribute('aria-expanded', 'false')
 })
@@ -93,6 +93,8 @@ test('tabbing past the last item closes the menu', async () => {
 
   await user.tab()
   expect(screen.getByRole('link', { name: '變更密碼' })).toHaveFocus()
+  await user.tab()
+  expect(screen.getByRole('link', { name: '系統狀態' })).toHaveFocus()
   await user.tab()
   expect(screen.getByRole('button', { name: '登出' })).toHaveFocus()
   expect(toggle).toHaveAttribute('aria-expanded', 'true')
@@ -136,7 +138,7 @@ test('clicking the brand mark when logged in stays on the home page', async () =
   await user.click(await screen.findByRole('link', { name: 'nest-egg' }))
 
   expect(router.state.location.pathname).toBe('/')
-  expect(await screen.findByRole('heading', { level: 1, name: '系統狀態' })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { level: 1, name: '記帳' })).toBeInTheDocument()
 })
 
 test('choosing change password opens the page and closes the menu', async () => {
@@ -148,4 +150,16 @@ test('choosing change password opens the page and closes the menu', async () => 
 
   await waitFor(() => expect(router.state.location.pathname).toBe('/change-password'))
   expect(toggle).toHaveAttribute('aria-expanded', 'false')
+})
+
+test('choosing system status opens the status page and closes the menu', async () => {
+  fakeBackend({ user: 'me@example.com' })
+  const { router } = renderApp('/')
+  const { user, toggle } = await openMenu()
+
+  await user.click(screen.getByRole('link', { name: '系統狀態' }))
+
+  await waitFor(() => expect(router.state.location.pathname).toBe('/status'))
+  expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  expect(await screen.findByRole('heading', { level: 1, name: '系統狀態' })).toBeInTheDocument()
 })

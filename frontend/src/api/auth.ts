@@ -5,17 +5,9 @@ export type RegisterInput = { email: string; password: string; confirm_password:
 export type ResetPasswordInput = { token: string; password: string; confirm_password: string }
 export type ChangePasswordInput = { current_password: string; password: string; confirm_password: string }
 
-export class ApiError extends Error {
-  status: number
+import { ApiError, jsonHeaders } from './http'
 
-  constructor(status: number) {
-    super(`request failed with status ${status}`)
-    this.name = 'ApiError'
-    this.status = status
-  }
-}
-
-const jsonHeaders = { 'Content-Type': 'application/json' }
+export { ApiError }
 
 async function post(path: string, body?: unknown): Promise<void> {
   const res = await fetch(path, {

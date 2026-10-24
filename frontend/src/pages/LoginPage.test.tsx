@@ -12,13 +12,13 @@ async function fillLogin(email: string, password: string) {
   await user.click(screen.getByRole('button', { name: '登入' }))
 }
 
-test('logs in and shows the status page', async () => {
+test('logs in and shows the ledger page', async () => {
   const backend = fakeBackend({ user: null })
   const { router } = renderApp('/login')
 
   await fillLogin('Me@Example.com', 'Passw0rd!')
 
-  expect(await screen.findByRole('heading', { name: '系統狀態' })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: '記帳' })).toBeInTheDocument()
   expect(router.state.location.pathname).toBe('/')
   const call = backend.calls.find((c) => c.path === '/api/auth/login')
   expect(call?.body).toEqual({ email: 'Me@Example.com', password: 'Passw0rd!' })
@@ -61,7 +61,7 @@ test('redirects to / when already logged in', async () => {
   fakeBackend({ user: 'me@example.com' })
   const { router } = renderApp('/login')
 
-  expect(await screen.findByRole('heading', { name: '系統狀態' })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: '記帳' })).toBeInTheDocument()
   expect(router.state.location.pathname).toBe('/')
 })
 

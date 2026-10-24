@@ -35,7 +35,7 @@ function AppLayout() {
             <span className="text-lg font-bold tracking-[-0.01em] text-heading">nest-egg</span>
           </Link>
           <span className="border-l border-border pl-2.5 text-xs text-muted-foreground max-[480px]:hidden">
-            個人資產追蹤
+            記帳與資產
           </span>
           {user && <UserMenu email={user.email} />}
         </div>

@@ -1,6 +1,7 @@
 import { vi } from 'vitest'
+import type { Category, Currency, DecimalString, Entry, EntryInput, Total } from '../api/ledger'
 
-type Call = { method: string; path: string; body?: Record<string, string> }
+type Call = { method: string; path: string; body?: Record<string, unknown> }
 
 type Options = {
   user?: string | null
@@ -11,6 +12,18 @@ type Options = {
   forgotStatus?: number
   resetStatus?: number
   changeStatus?: number
+  ledger?: LedgerOptions
+}
+
+export type LedgerOptions = {
+  entries?: Entry[]
+  totals?: Record<string, Total[]>
+  usdRate?: { rate: DecimalString; date: string }
+  listStatus?: number
+  entryStatus?: number
+  saveStatus?: number
+  saveFields?: Record<string, string>
+  savePending?: boolean
 }
 
 function json(status: number, body: unknown) {
@@ -24,15 +37,104 @@ function empty(status: number) {
   return new Response(null, { status })
 }
 
+export const defaultCategories: Category[] = [
+  { id: 1, kind: 'expense', name: '飲食' },
+  { id: 2, kind: 'expense', name: '生活用品' },
+  { id: 3, kind: 'expense', name: '美容美髮' },
+  { id: 4, kind: 'expense', name: '其他' },
+  { id: 5, kind: 'income', name: '薪水' },
+  { id: 6, kind: 'income', name: '獎金' },
+  { id: 7, kind: 'income', name: '股息' },
+  { id: 8, kind: 'income', name: '其他' },
+]
+
+const currencies: Currency[] = [
+  { code: 'TWD', name: '新臺幣', minor_unit: 2 },
+  { code: 'USD', name: '美元', minor_unit: 2 },
+]
+
+function twoDecimals(amount: string): DecimalString {
+  const [whole, fraction = ''] = amount.split('.')
+  return `${whole}.${fraction.padEnd(2, '0')}` as DecimalString
+}
+
+function byNewest(a: Entry, b: Entry) {
+  if (a.occurred_on !== b.occurred_on) return a.occurred_on < b.occurred_on ? 1 : -1
+  return b.id - a.id
+}
+
+function fakeLedger(opts: LedgerOptions = {}) {
+  const entries = new Map((opts.entries ?? []).map((e) => [e.id, e]))
+  let nextId = Math.max(0, ...entries.keys()) + 1
+
+  function toEntry(id: number, input: EntryInput): Entry {
+    const category = defaultCategories.find((c) => c.id === input.category_id)!
+    const rate = input.currency === 'TWD' ? undefined : opts.usdRate
+    return {
+      id,
+      occurred_on: input.occurred_on,
+      kind: category.kind,
+      category: { id: category.id, name: category.name },
+      currency: input.currency,
+      amount: twoDecimals(input.amount),
+      market_rate: rate?.rate ?? null,
+      market_rate_date: rate?.date ?? null,
+      note: input.note,
+    }
+  }
+
+  function save(id: number, input: EntryInput, status: number): Response | Promise<Response> {
+    if (opts.savePending) return new Promise<Response>(() => {})
+    const failed = opts.saveStatus
+    if (failed === 422) return json(422, { error: 'invalid input', fields: opts.saveFields ?? {} })
+    if (failed) return json(failed, { error: 'save failed' })
+    const entry = toEntry(id, input)
+    entries.set(id, entry)
+    return json(status, entry)
+  }
+
+  function handle(method: string, path: string, body: unknown): Response | Promise<Response> | undefined {
+    const url = new URL(path, 'http://localhost')
+    if (method === 'GET' && url.pathname === '/api/categories') return json(200, { categories: defaultCategories })
+    if (method === 'GET' && url.pathname === '/api/currencies') return json(200, { currencies })
+    if (url.pathname === '/api/ledger-entries') {
+      if (method === 'POST') return save(nextId++, body as EntryInput, 201)
+      if (opts.listStatus) return json(opts.listStatus, { error: 'list failed' })
+      const month = url.searchParams.get('month') ?? ''
+      const list = [...entries.values()].filter((e) => e.occurred_on.startsWith(month)).sort(byNewest)
+      return json(200, { month, entries: list, totals: opts.totals?.[month] ?? [] })
+    }
+    const match = url.pathname.match(/^\/api\/ledger-entries\/(\d+)$/)
+    if (!match) return undefined
+    const id = Number.parseInt(match[1], 10)
+    const entry = entries.get(id)
+    if (method === 'GET' && opts.entryStatus) return json(opts.entryStatus, { error: 'entry failed' })
+    if (!entry) return json(404, { error: 'not found' })
+    if (method === 'GET') return json(200, entry)
+    if (method === 'PUT') return save(id, body as EntryInput, 200)
+    if (method === 'DELETE') {
+      entries.delete(id)
+      return empty(204)
+    }
+    return undefined
+  }
+
+  return { entries, handle }
+}
+
 export function fakeBackend(opts: Options = {}) {
   const state = { user: opts.user ?? null }
   const calls: Call[] = []
+  const ledger = fakeLedger(opts.ledger)
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
     const path = String(input)
     const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, string>) : undefined
     calls.push({ method, path, body })
+
+    const ledgerResponse = ledger.handle(method, path, body)
+    if (ledgerResponse) return ledgerResponse
 
     switch (`${method} ${path}`) {
       case 'GET /api/auth/me':
@@ -79,6 +181,7 @@ export function fakeBackend(opts: Options = {}) {
   return {
     state,
     calls,
+    entries: ledger.entries,
     called: (method: string, path: string) => calls.some((c) => c.method === method && c.path === path),
   }
 }
