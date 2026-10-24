@@ -192,6 +192,15 @@ test('shows the fields the server rejected next to those fields', async () => {
   expect(router.state.location.pathname).toBe('/entries/new')
 })
 
+test('shows a currency the server rejected next to the currency field', async () => {
+  fakeBackend({ user: 'me@example.com', ledger: { saveStatus: 422, saveFields: { currency: 'unknown currency' } } })
+  renderApp('/entries/new')
+
+  await fillAndSave({})
+
+  await waitFor(() => expect(screen.getByLabelText('幣別')).toHaveAccessibleDescription('不支援這個幣別'))
+})
+
 test('shows a general error when saving fails for another reason', async () => {
   fakeBackend({ user: 'me@example.com', ledger: { saveStatus: 500 } })
   renderApp('/entries/new')

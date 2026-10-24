@@ -23,6 +23,7 @@ import ChoiceGroup from '../components/ChoiceGroup'
 import Field from '../components/Field'
 import Notice from '../components/Notice'
 import PageMessage from '../components/PageMessage'
+import SelectField from '../components/SelectField'
 import TextLink from '../components/TextLink'
 import { taipeiToday } from '../format/date'
 import { currentUserKey } from '../hooks/useCurrentUser'
@@ -201,22 +202,13 @@ function EntryForm({ categories, currencies, entry }: { categories: Category[]; 
         error={errors.occurred_on?.message}
         {...register('occurred_on')}
       />
-      <div className="flex flex-col gap-1.5">
-        <label className="text-sm font-semibold text-heading" htmlFor="entry-currency">
-          幣別
-        </label>
-        <select
-          id="entry-currency"
-          className="rounded-control border border-border bg-card px-3 py-2.5 text-md text-foreground focus-visible:outline-3 focus-visible:outline-offset-1 focus-visible:outline-ring"
-          {...register('currency')}
-        >
-          {currencies.map((c) => (
-            <option key={c.code} value={c.code}>
-              {c.code} {c.name}
-            </option>
-          ))}
-        </select>
-      </div>
+      <SelectField id="entry-currency" label="幣別" error={errors.currency?.message} {...register('currency')}>
+        {currencies.map((c) => (
+          <option key={c.code} value={c.code}>
+            {c.code} {c.name}
+          </option>
+        ))}
+      </SelectField>
       <Field
         id="entry-amount"
         label="金額"
