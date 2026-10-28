@@ -51,8 +51,8 @@ test_request_connection_refused() {
 
 test_request_sends_method_and_body() {
   respond "201${TAB}{}"
-  request POST http://127.0.0.1:8080/api/fx-trades '{"buy_amount":"1000"}'
-  if [ "$(cat "$FAKE_CURL_LOG")" = 'POST http://127.0.0.1:8080/api/fx-trades {"buy_amount":"1000"}' ] &&
+  request POST http://127.0.0.1:8080/api/fx-trades '{"foreign_amount":"1000"}'
+  if [ "$(cat "$FAKE_CURL_LOG")" = 'POST http://127.0.0.1:8080/api/fx-trades {"foreign_amount":"1000"}' ] &&
     [ "$STATUS" = 201 ]; then
     pass "request：送出指定的方法與 body"
   else

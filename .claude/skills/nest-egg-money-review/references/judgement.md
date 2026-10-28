@@ -19,16 +19,18 @@
   - 買進或外幣收入：成本加上付出加手續費（外幣收入用 `market_rate` 換算），數量加上取得。
   - 賣出或提領：依當下均價扣成本，均價不變。
   - 外幣數量為負的期間，均價與損益回 `null`（第 1 項），不硬算。
-- 每月加權平均換匯成本只看當月的買進：`SUM(pay_amount + fee) / SUM(buy_amount)`，Go 端也一樣（先各自加總再相除）。
-- 錯誤：把每筆 `trade_rate` 加總再除以筆數、漏掉 `fee`、賣出時用「總付出 ÷ 剩餘數量」重算均價。
-- 手續費一律是台幣（規則 6），賣外幣時也不用外幣計。
+- 每月加權平均換匯成本只看當月的買進：`SUM(twd_amount) / SUM(foreign_amount)`（`side = 'buy'`），Go 端也一樣（先各自加總再相除）。
+- 錯誤：把每筆成交匯率加總再除以筆數、賣出時用「總付出 ÷ 剩餘數量」重算均價。
+- 換匯沒有手續費欄位；股票的手續費一律是台幣（規則 6）。
 - `decimal.Div` 除以 0 會 panic，除數為 0 時依第 1 項處理。
 
-## 3. 報價方向：1 外幣 = X 台幣（規則 6）
+## 3. 報價方向：1 外幣 = X 台幣（規則 2、6）
 
-- 買外幣（`pay_currency = TWD`）：`trade_rate ≈ pay_amount / buy_amount`。
-- 賣外幣（`buy_currency = TWD`）：`trade_rate ≈ buy_amount / pay_amount`。
-- 匯差方向買賣相反：買外幣時成交匯率越高越吃虧，賣外幣時越低越吃虧。
+- 成交匯率一律是 `twd_amount / foreign_amount`，買賣都一樣；不由使用者輸入、不存進資料庫。
+- 與市場的差額方向買賣相反：
+  - 買外幣（`side = 'buy'`）：`twd_amount − foreign_amount × market_rate`。
+  - 賣外幣（`side = 'sell'`）：`foreign_amount × market_rate − twd_amount`。
+  - 兩者都是正數表示比市場吃虧。
 - 怎麼看：賣外幣的路徑有沒有直接沿用買外幣的公式。
 
 ## 4. 小數位數
@@ -45,7 +47,7 @@
 
 ## 6. log 與錯誤回應
 
-- log 只記 ID，不記金額、匯率、request body（例如 `"pay_amount", t.PayAmount` 就算是財務資料外洩）。
+- log 只記 ID，不記金額、匯率、request body（例如 `"twd_amount", t.TWDAmount` 就算是財務資料外洩）。
 - 跨多行的 `slog` 呼叫 script 抓不到，要逐一看參數。
 - 錯誤回應只給通用訊息與 `request_id`，內部錯誤只留在後端 log。
 

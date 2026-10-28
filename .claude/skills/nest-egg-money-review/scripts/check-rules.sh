@@ -126,9 +126,9 @@ check utc-day-sql sql 'date_trunc\(|::date\b|\bcurrent_date\b' \
 check utc-day-frontend ts 'toISOString\(\)\.(slice|substring|substr|split)\(' \
   'toISOString() 是 UTC 日期；台北日期用 Intl.DateTimeFormat 搭配 timeZone: Asia/Taipei'
 
-# 3. 平均成本 = SUM(付出 + 手續費) ÷ SUM(取得)
+# 3. 平均成本 = SUM(台幣金額) ÷ SUM(外幣金額)
 check avg-rate-sql sql '\bavg\s*\([^)]*rate' \
-  '不可把匯率直接平均；平均成本 = SUM(pay_amount + fee) / SUM(buy_amount)'
+  '不可把匯率直接平均；平均成本 = SUM(twd_amount) / SUM(foreign_amount)'
 
 # 4. 幣別是資料
 check currency-list code-nontest "[\"'\`][A-Z]{3}[\"'\`]\s*,\s*[\"'\`][A-Z]{3}[\"'\`]" \

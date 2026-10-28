@@ -59,7 +59,7 @@ docker compose restart backend   # 後端在 air 裡，連不上 db 時程式會
 1. 在 `scripts/unit.test.sh` 用 `respond` 和假 curl 寫測試：正常回應、錯誤狀態碼、內容不符各一個。執行後確認看到紅燈。
 2. 新增 `scripts/smoke/<name>.sh`：`. "$(dirname "$0")/../lib.sh"`，用 `BACKEND_URL`、`request`、`expect_*`。`verify-stack.sh` 第 6 步會自動執行所有 `smoke/*.sh`。
 3. smoke test 只呼叫 GET，不在真實資料庫寫入或刪除資料；寫入類 API 用 Go 的 `httptest` 測。
-4. 金額、匯率欄位要確認是字串，例如 `expect_body_has '"buy_amount":"'`。
+4. 金額、匯率欄位要確認是字串，例如 `expect_body_has '"foreign_amount":"'`。
 5. 幣別這類資料清單只檢查必要的項目，不比對整個回應。
 6. 執行 `bash .claude/skills/nest-egg-verify/scripts/unit.test.sh` 確認轉綠，再跑 `verify-stack.sh`。
 

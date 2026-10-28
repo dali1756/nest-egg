@@ -29,7 +29,7 @@ CLAUDE.md 的設計規則有兩種檢查：`check-rules.sh` 抓單行就看得�
 | `float-sql` | `NUMERIC(20,4)`（金額）、`NUMERIC(20,8)`（匯率） |
 | `number-frontend` | 前端只顯示字串；合計、平均、損益改由後端算好回傳字串。不在前端手寫小數運算 |
 | `utc-day-*` / `tzdata-import` | `time.Now().In(loc)`、`time.ParseInLocation`；SQL 加 `AT TIME ZONE 'Asia/Taipei'`；前端用 `Intl.DateTimeFormat` 搭配 `timeZone` |
-| `avg-rate-sql` | `SUM(pay_amount + fee) / SUM(buy_amount)` |
+| `avg-rate-sql` | `SUM(twd_amount) / SUM(foreign_amount)`（只看 `side = 'buy'`） |
 | `currency-list` | 查 `currencies` 表，或用外鍵 |
 | `secret-log` | 只記 ID 與非機密欄位 |
 | `frontend-external-api` | 改成呼叫自己的 `/api`，由後端的 `RateProvider` 取資料 |
