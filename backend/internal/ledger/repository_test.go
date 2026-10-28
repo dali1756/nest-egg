@@ -12,6 +12,7 @@ import (
 	"nest-egg/backend/internal/platform/apperr"
 	"nest-egg/backend/internal/platform/db/dbtest"
 	"nest-egg/backend/internal/platform/taipei"
+	"nest-egg/backend/internal/rate"
 )
 
 type kindName struct {
@@ -209,7 +210,7 @@ func TestRepositoryCreateAndGetEntry(t *testing.T) {
 	}
 	dividend := EntryValues{
 		OccurredOn: taipeiDate("2026-10-24"), CategoryID: a.salary.ID, Currency: "USD", Amount: decimal.RequireFromString("12.34"),
-		MarketRate: &MarketRate{Value: decimal.RequireFromString("32.508"), Date: taipeiDate("2026-10-23")},
+		MarketRate: &rate.MarketRate{Value: decimal.RequireFromString("32.508"), Date: taipeiDate("2026-10-23")},
 	}
 
 	for name, tc := range map[string]struct {
@@ -271,7 +272,7 @@ func TestRepositoryUpdateEntry(t *testing.T) {
 
 	changed := EntryValues{
 		OccurredOn: taipeiDate("2026-10-20"), CategoryID: a.salary.ID, Currency: "USD", Amount: decimal.RequireFromString("50"),
-		MarketRate: &MarketRate{Value: decimal.RequireFromString("32.617"), Date: taipeiDate("2026-10-20")}, Note: "股息",
+		MarketRate: &rate.MarketRate{Value: decimal.RequireFromString("32.617"), Date: taipeiDate("2026-10-20")}, Note: "股息",
 	}
 	if err := repo.UpdateEntry(t.Context(), a.id, id, changed); err != nil {
 		t.Fatalf("A updates own entry: %v", err)

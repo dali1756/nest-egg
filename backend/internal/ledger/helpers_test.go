@@ -1,16 +1,11 @@
 package ledger
 
 import (
-	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/shopspring/decimal"
 
-	"nest-egg/backend/internal/auth"
-	"nest-egg/backend/internal/platform/httpx"
 	"nest-egg/backend/internal/platform/taipei"
 	"nest-egg/backend/internal/rate"
 )
@@ -30,15 +25,15 @@ func usdSnapshot(date, value string) *rate.Snapshot {
 	}
 }
 
-func wantMarketRate(t *testing.T, got *MarketRate, value, date string) {
+func wantMarketRate(t *testing.T, got *rate.MarketRate, value, date string) {
 	t.Helper()
-	want := &MarketRate{Value: decimal.RequireFromString(value), Date: taipeiDate(date)}
+	want := &rate.MarketRate{Value: decimal.RequireFromString(value), Date: taipeiDate(date)}
 	if !sameMarketRate(got, want) {
 		t.Errorf("market rate = %+v, want %s on %s", got, value, date)
 	}
 }
 
-func sameMarketRate(a, b *MarketRate) bool {
+func sameMarketRate(a, b *rate.MarketRate) bool {
 	if a == nil || b == nil {
 		return a == b
 	}
@@ -65,36 +60,4 @@ func wantEntry(t *testing.T, got, want Entry) {
 	if got.Note != want.Note {
 		t.Errorf("note = %q, want %q", got.Note, want.Note)
 	}
-}
-
-func serveAs(user int64, h httpx.Handler, req *http.Request) *httptest.ResponseRecorder {
-	rec := httptest.NewRecorder()
-	if user != 0 {
-		req = req.WithContext(auth.WithUser(req.Context(), auth.User{ID: user, Email: "me@example.com"}))
-	}
-	h.ServeHTTP(rec, req)
-	return rec
-}
-
-func send(user int64, method, path, id, body string, h httpx.Handler) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, path, strings.NewReader(body))
-	if id != "" {
-		req.SetPathValue("id", id)
-	}
-	return serveAs(user, h, req)
-}
-
-func wantNoUserID(t *testing.T, rec *httptest.ResponseRecorder) {
-	t.Helper()
-	if strings.Contains(rec.Body.String(), "user_id") {
-		t.Errorf("response %s contains user_id", rec.Body)
-	}
-}
-
-func wantResponse(t *testing.T, rec *httptest.ResponseRecorder, status int, body string) {
-	t.Helper()
-	if rec.Code != status || strings.TrimSpace(rec.Body.String()) != body {
-		t.Errorf("response = %d %s\nwant       %d %s", rec.Code, strings.TrimSpace(rec.Body.String()), status, body)
-	}
-	wantNoUserID(t, rec)
 }

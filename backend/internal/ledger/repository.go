@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/shopspring/decimal"
 
 	"nest-egg/backend/internal/platform/apperr"
 	"nest-egg/backend/internal/platform/db/dbgen"
 	"nest-egg/backend/internal/platform/taipei"
+	"nest-egg/backend/internal/rate"
 )
 
 type Repository struct {
@@ -59,10 +59,10 @@ func (r *Repository) Category(ctx context.Context, userID, id int64) (Category, 
 }
 
 func (r *Repository) CreateEntry(ctx context.Context, userID int64, v EntryValues) (int64, error) {
-	rate, rateDate := marketRateColumns(v.MarketRate)
+	marketRate, marketRateDate := v.MarketRate.Columns()
 	id, err := r.q.CreateEntry(ctx, dbgen.CreateEntryParams{
 		UserID: userID, OccurredOn: v.OccurredOn, CategoryID: v.CategoryID, Currency: v.Currency,
-		Amount: v.Amount, MarketRate: rate, MarketRateDate: rateDate, Note: v.Note,
+		Amount: v.Amount, MarketRate: marketRate, MarketRateDate: marketRateDate, Note: v.Note,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("insert ledger entry: %w", err)
@@ -82,10 +82,10 @@ func (r *Repository) Entry(ctx context.Context, userID, id int64) (Entry, error)
 }
 
 func (r *Repository) UpdateEntry(ctx context.Context, userID, id int64, v EntryValues) error {
-	rate, rateDate := marketRateColumns(v.MarketRate)
+	marketRate, marketRateDate := v.MarketRate.Columns()
 	n, err := r.q.UpdateEntry(ctx, dbgen.UpdateEntryParams{
 		ID: id, UserID: userID, OccurredOn: v.OccurredOn, CategoryID: v.CategoryID, Currency: v.Currency,
-		Amount: v.Amount, MarketRate: rate, MarketRateDate: rateDate, Note: v.Note,
+		Amount: v.Amount, MarketRate: marketRate, MarketRateDate: marketRateDate, Note: v.Note,
 	})
 	if err != nil {
 		return fmt.Errorf("update ledger entry %d: %w", id, err)
@@ -107,13 +107,6 @@ func (r *Repository) DeleteEntry(ctx context.Context, userID, id int64) error {
 	return nil
 }
 
-func marketRateColumns(m *MarketRate) (*decimal.Decimal, *time.Time) {
-	if m == nil {
-		return nil, nil
-	}
-	return &m.Value, &m.Date
-}
-
 func entryFromRow(row dbgen.GetEntryRow) Entry {
 	e := Entry{
 		ID:         row.ID,
@@ -124,9 +117,7 @@ func entryFromRow(row dbgen.GetEntryRow) Entry {
 		Amount:     row.Amount,
 		Note:       row.Note,
 	}
-	if row.MarketRate != nil && row.MarketRateDate != nil {
-		e.MarketRate = &MarketRate{Value: *row.MarketRate, Date: taipei.FromDBDate(*row.MarketRateDate)}
-	}
+	e.MarketRate = rate.MarketRateFromColumns(row.MarketRate, row.MarketRateDate)
 	return e
 }
 

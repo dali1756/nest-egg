@@ -1,14 +1,10 @@
 package ledger
 
 import (
-	"errors"
-	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 
 	"nest-egg/backend/internal/auth"
-	"nest-egg/backend/internal/platform/apperr"
 	"nest-egg/backend/internal/platform/httpx"
 )
 
@@ -18,25 +14,6 @@ type Handler struct {
 
 func NewHandler(svc *Service) *Handler {
 	return &Handler{svc: svc}
-}
-
-var errNoUser = errors.New("no user in request context")
-
-func currentUserID(r *http.Request) (int64, error) {
-	user, ok := auth.CurrentUser(r.Context())
-	if !ok {
-		return 0, errNoUser
-	}
-	return user.ID, nil
-}
-
-// entryID 解析路徑的 {id}，不是數字時和不存在一樣回 404
-func entryID(r *http.Request) (int64, error) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("ledger entry id %q: %w", r.PathValue("id"), apperr.ErrNotFound)
-	}
-	return id, nil
 }
 
 type categoryResponse struct {
@@ -50,7 +27,7 @@ type categoriesResponse struct {
 }
 
 func (h *Handler) ListCategories(w http.ResponseWriter, r *http.Request) error {
-	userID, err := currentUserID(r)
+	userID, err := auth.UserID(r)
 	if err != nil {
 		return err
 	}
@@ -136,7 +113,7 @@ type monthResponse struct {
 }
 
 func (h *Handler) ListEntries(w http.ResponseWriter, r *http.Request) error {
-	userID, err := currentUserID(r)
+	userID, err := auth.UserID(r)
 	if err != nil {
 		return err
 	}
@@ -159,7 +136,7 @@ func (h *Handler) ListEntries(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (h *Handler) CreateEntry(w http.ResponseWriter, r *http.Request) error {
-	userID, err := currentUserID(r)
+	userID, err := auth.UserID(r)
 	if err != nil {
 		return err
 	}
@@ -175,11 +152,11 @@ func (h *Handler) CreateEntry(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (h *Handler) GetEntry(w http.ResponseWriter, r *http.Request) error {
-	userID, err := currentUserID(r)
+	userID, err := auth.UserID(r)
 	if err != nil {
 		return err
 	}
-	id, err := entryID(r)
+	id, err := httpx.PathID(r, "ledger entry")
 	if err != nil {
 		return err
 	}
@@ -191,11 +168,11 @@ func (h *Handler) GetEntry(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (h *Handler) UpdateEntry(w http.ResponseWriter, r *http.Request) error {
-	userID, err := currentUserID(r)
+	userID, err := auth.UserID(r)
 	if err != nil {
 		return err
 	}
-	id, err := entryID(r)
+	id, err := httpx.PathID(r, "ledger entry")
 	if err != nil {
 		return err
 	}
@@ -211,11 +188,11 @@ func (h *Handler) UpdateEntry(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (h *Handler) DeleteEntry(w http.ResponseWriter, r *http.Request) error {
-	userID, err := currentUserID(r)
+	userID, err := auth.UserID(r)
 	if err != nil {
 		return err
 	}
-	id, err := entryID(r)
+	id, err := httpx.PathID(r, "ledger entry")
 	if err != nil {
 		return err
 	}

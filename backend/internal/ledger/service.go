@@ -4,16 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
-	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/shopspring/decimal"
 
 	"nest-egg/backend/internal/currency"
 	"nest-egg/backend/internal/platform/apperr"
 	"nest-egg/backend/internal/platform/taipei"
+	"nest-egg/backend/internal/platform/validate"
 	"nest-egg/backend/internal/rate"
 )
 
@@ -41,11 +39,6 @@ var defaultCategories = []Category{
 	{Kind: KindIncome, Name: "其他"},
 }
 
-type MarketRate struct {
-	Value decimal.Decimal
-	Date  time.Time
-}
-
 type Entry struct {
 	ID         int64
 	OccurredOn time.Time
@@ -53,7 +46,7 @@ type Entry struct {
 	Currency   string
 	MinorUnit  int
 	Amount     decimal.Decimal
-	MarketRate *MarketRate
+	MarketRate *rate.MarketRate
 	Note       string
 }
 
@@ -87,7 +80,7 @@ type EntryValues struct {
 	CategoryID int64
 	Currency   string
 	Amount     decimal.Decimal
-	MarketRate *MarketRate
+	MarketRate *rate.MarketRate
 	Note       string
 }
 
@@ -104,22 +97,14 @@ type Store interface {
 	DeleteEntry(ctx context.Context, userID, id int64) error
 }
 
-type Currencies interface {
-	Get(ctx context.Context, code string) (currency.Currency, error)
-}
-
-type MarketRates interface {
-	On(ctx context.Context, base, quote string, date time.Time) (rate.Snapshot, error)
-}
-
 type Service struct {
 	store      Store
-	currencies Currencies
-	rates      MarketRates
+	currencies currency.Getter
+	rates      rate.Finder
 	now        func() time.Time
 }
 
-func NewService(store Store, currencies Currencies, rates MarketRates) *Service {
+func NewService(store Store, currencies currency.Getter, rates rate.Finder) *Service {
 	return &Service{store: store, currencies: currencies, rates: rates, now: time.Now}
 }
 
@@ -135,7 +120,7 @@ func (s *Service) CreateEntry(ctx context.Context, userID int64, in EntryInput) 
 	if err != nil {
 		return Entry{}, err
 	}
-	if v.MarketRate, err = s.marketRate(ctx, v.Currency, v.OccurredOn); err != nil {
+	if v.MarketRate, err = rate.MarketRateInTWD(ctx, s.rates, v.Currency, v.OccurredOn); err != nil {
 		return Entry{}, err
 	}
 	id, err := s.store.CreateEntry(ctx, userID, v)
@@ -164,7 +149,7 @@ func (s *Service) UpdateEntry(ctx context.Context, userID, id int64, in EntryInp
 	}
 	v.MarketRate = current.MarketRate
 	if !v.OccurredOn.Equal(current.OccurredOn) || v.Currency != current.Currency {
-		if v.MarketRate, err = s.marketRate(ctx, v.Currency, v.OccurredOn); err != nil {
+		if v.MarketRate, err = rate.MarketRateInTWD(ctx, s.rates, v.Currency, v.OccurredOn); err != nil {
 			return Entry{}, err
 		}
 	}
@@ -175,7 +160,7 @@ func (s *Service) UpdateEntry(ctx context.Context, userID, id int64, in EntryInp
 }
 
 func (s *Service) Month(ctx context.Context, userID int64, month string) (MonthLedger, error) {
-	first, err := s.firstDayOf(month)
+	first, err := validate.MonthStart(month, taipei.Today(s.now()))
 	if err != nil {
 		return MonthLedger{}, err
 	}
@@ -188,87 +173,31 @@ func (s *Service) Month(ctx context.Context, userID int64, month string) (MonthL
 	if err != nil {
 		return MonthLedger{}, err
 	}
-	return MonthLedger{Month: first.Format(monthLayout), Entries: entries, Totals: totals}, nil
+	return MonthLedger{Month: first.Format(validate.MonthLayout), Entries: entries, Totals: totals}, nil
 }
-
-const monthLayout = "2006-01"
-
-func (s *Service) firstDayOf(month string) (time.Time, error) {
-	if month == "" {
-		today := taipei.Today(s.now())
-		return time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, taipei.Location), nil
-	}
-	first, err := time.ParseInLocation(monthLayout, month, taipei.Location)
-	if err != nil {
-		return time.Time{}, &apperr.ValidationError{Fields: map[string]string{"month": "must be a month in YYYY-MM format"}}
-	}
-	return first, nil
-}
-
-const baseCurrency = "TWD"
-
-func (s *Service) marketRate(ctx context.Context, cur string, date time.Time) (*MarketRate, error) {
-	if cur == baseCurrency {
-		return nil, nil
-	}
-	snap, err := s.rates.On(ctx, cur, baseCurrency, date)
-	switch {
-	case errors.Is(err, apperr.ErrNotFound):
-		return nil, nil
-	case err != nil:
-		return nil, fmt.Errorf("look up %s market rate: %w", cur, err)
-	}
-	return &MarketRate{Value: snap.Value, Date: snap.Date}, nil
-}
-
-const maxNoteLength = 200
-
-var amountPattern = regexp.MustCompile(`^[0-9]{1,16}(\.[0-9]+)?$`)
 
 func (s *Service) validate(ctx context.Context, userID int64, in EntryInput) (EntryValues, error) {
-	date, dateProblem := s.parseOccurredOn(in.OccurredOn)
+	date, dateProblem := validate.PastDate(in.OccurredOn, taipei.Today(s.now()))
 	categoryProblem, err := s.categoryProblem(ctx, userID, in.CategoryID)
 	if err != nil {
 		return EntryValues{}, err
 	}
-	cur, currencyProblem, err := s.lookupCurrency(ctx, in.Currency)
+	cur, currencyProblem, err := currency.Lookup(ctx, s.currencies, in.Currency)
 	if err != nil {
 		return EntryValues{}, err
 	}
-	amount, amountProblem := parseAmount(in.Amount, cur)
+	amount, amountProblem := currency.ParseAmount(in.Amount, cur)
 
-	fields := nonEmpty(map[string]string{
+	if err := validate.Fields(map[string]string{
 		"occurred_on": dateProblem,
 		"category_id": categoryProblem,
 		"currency":    currencyProblem,
 		"amount":      amountProblem,
-		"note":        noteProblem(in.Note),
-	})
-	if len(fields) > 0 {
-		return EntryValues{}, &apperr.ValidationError{Fields: fields}
+		"note":        validate.Note(in.Note),
+	}); err != nil {
+		return EntryValues{}, err
 	}
 	return EntryValues{OccurredOn: date, CategoryID: in.CategoryID, Currency: in.Currency, Amount: amount, Note: in.Note}, nil
-}
-
-func nonEmpty(problems map[string]string) map[string]string {
-	fields := map[string]string{}
-	for field, problem := range problems {
-		if problem != "" {
-			fields[field] = problem
-		}
-	}
-	return fields
-}
-
-func (s *Service) parseOccurredOn(raw string) (time.Time, string) {
-	date, err := taipei.ParseDate(raw)
-	switch {
-	case err != nil:
-		return time.Time{}, "must be a date in YYYY-MM-DD format"
-	case date.After(taipei.Today(s.now())):
-		return time.Time{}, "must not be in the future"
-	}
-	return date, ""
 }
 
 func (s *Service) categoryProblem(ctx context.Context, userID, id int64) (string, error) {
@@ -283,46 +212,4 @@ func (s *Service) categoryProblem(ctx context.Context, userID, id int64) (string
 		return "", fmt.Errorf("check category: %w", err)
 	}
 	return "", nil
-}
-
-func (s *Service) lookupCurrency(ctx context.Context, code string) (*currency.Currency, string, error) {
-	if code == "" {
-		return nil, "required", nil
-	}
-	c, err := s.currencies.Get(ctx, code)
-	switch {
-	case errors.Is(err, apperr.ErrNotFound):
-		return nil, "unknown currency", nil
-	case err != nil:
-		return nil, "", fmt.Errorf("check currency: %w", err)
-	}
-	return &c, "", nil
-}
-
-func parseAmount(raw string, cur *currency.Currency) (decimal.Decimal, string) {
-	if !amountPattern.MatchString(raw) {
-		return decimal.Decimal{}, "must be a number like 120 or 32.5"
-	}
-	amount := decimal.RequireFromString(raw)
-	switch {
-	case !amount.IsPositive():
-		return decimal.Decimal{}, "must be greater than 0"
-	case cur != nil && decimalPlaces(raw) > cur.MinorUnit:
-		return decimal.Decimal{}, fmt.Sprintf("must have at most %d decimal places", cur.MinorUnit)
-	}
-	return amount, ""
-}
-
-func noteProblem(note string) string {
-	if utf8.RuneCountInString(note) > maxNoteLength {
-		return fmt.Sprintf("must be at most %d characters", maxNoteLength)
-	}
-	return ""
-}
-
-func decimalPlaces(amount string) int {
-	if i := strings.IndexByte(amount, '.'); i >= 0 {
-		return len(amount) - i - 1
-	}
-	return 0
 }

@@ -68,6 +68,16 @@ func CurrentUser(ctx context.Context) (User, bool) {
 	return u, ok
 }
 
+var errNoUser = errors.New("no user in request context")
+
+func UserID(r *http.Request) (int64, error) {
+	u, ok := CurrentUser(r.Context())
+	if !ok {
+		return 0, errNoUser
+	}
+	return u.ID, nil
+}
+
 type userResponse struct {
 	Email string `json:"email"`
 }

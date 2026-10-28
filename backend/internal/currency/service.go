@@ -2,6 +2,8 @@ package currency
 
 import "context"
 
+const TWD = "TWD"
+
 type Currency struct {
 	Code      string
 	Name      string
