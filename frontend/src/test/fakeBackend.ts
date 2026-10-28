@@ -1,5 +1,8 @@
 import { vi } from 'vitest'
-import type { Category, Currency, DecimalString, Entry, EntryInput, Total } from '../api/ledger'
+import type { Currency } from '../api/currencies'
+import type { FxRates, FxTrade, FxTradeInput } from '../api/fx'
+import type { DecimalString } from '../api/http'
+import type { Category, Entry, EntryInput, Total } from '../api/ledger'
 
 type Call = { method: string; path: string; body?: Record<string, unknown> }
 
@@ -13,6 +16,7 @@ type Options = {
   resetStatus?: number
   changeStatus?: number
   ledger?: LedgerOptions
+  fx?: FxOptions
 }
 
 export type LedgerOptions = {
@@ -22,6 +26,15 @@ export type LedgerOptions = {
   saveStatus?: number
   saveFields?: Record<string, string>
   savePending?: boolean
+}
+
+export type FxOptions = {
+  trades?: FxTrade[]
+  listStatus?: number
+  saveStatus?: number
+  saveFields?: Record<string, string>
+  rates?: FxRates
+  previewStatus?: number
 }
 
 function json(status: number, body: unknown) {
@@ -118,10 +131,66 @@ function fakeLedger(opts: LedgerOptions = {}) {
   return { handle }
 }
 
+const noMarketRate: FxRates = { trade_rate: '32.42', market_rate: null, market_rate_date: null, spread: null }
+
+function byNewestTrade(a: FxTrade, b: FxTrade) {
+  if (a.traded_on !== b.traded_on) return a.traded_on < b.traded_on ? 1 : -1
+  return b.id - a.id
+}
+
+function fakeFx(opts: FxOptions = {}) {
+  const trades = new Map((opts.trades ?? []).map((t) => [t.id, t]))
+  let nextId = Math.max(0, ...trades.keys()) + 1
+  const rates = opts.rates ?? noMarketRate
+
+  function save(id: number, input: FxTradeInput, status: number): Response {
+    if (opts.saveStatus === 422) return json(422, { error: 'invalid input', fields: opts.saveFields ?? {} })
+    if (opts.saveStatus) return json(opts.saveStatus, { error: 'save failed' })
+    const trade: FxTrade = {
+      id,
+      ...input,
+      foreign_amount: twoDecimals(input.foreign_amount),
+      twd_amount: twoDecimals(input.twd_amount),
+      ...rates,
+    }
+    trades.set(id, trade)
+    return json(status, trade)
+  }
+
+  function handle(method: string, path: string, body: unknown): Response | undefined {
+    const url = new URL(path, 'http://localhost')
+    if (url.pathname === '/api/fx-trades') {
+      if (method === 'POST') return save(nextId++, body as FxTradeInput, 201)
+      if (opts.listStatus) return json(opts.listStatus, { error: 'list failed' })
+      const month = url.searchParams.get('month') ?? ''
+      const list = [...trades.values()].filter((t) => t.traded_on.startsWith(month)).sort(byNewestTrade)
+      return json(200, { month, trades: list })
+    }
+    if (method === 'GET' && url.pathname === '/api/fx-trades/preview') {
+      if (opts.previewStatus) return json(opts.previewStatus, { error: 'preview failed' })
+      return json(200, rates)
+    }
+    const match = url.pathname.match(/^\/api\/fx-trades\/(\d+)$/)
+    if (!match) return undefined
+    const id = Number.parseInt(match[1], 10)
+    if (!trades.has(id)) return json(404, { error: 'not found' })
+    if (method === 'GET') return json(200, trades.get(id))
+    if (method === 'PUT') return save(id, body as FxTradeInput, 200)
+    if (method === 'DELETE') {
+      trades.delete(id)
+      return empty(204)
+    }
+    return undefined
+  }
+
+  return { handle }
+}
+
 export function fakeBackend(opts: Options = {}) {
   const state = { user: opts.user ?? null }
   const calls: Call[] = []
   const ledger = fakeLedger(opts.ledger)
+  const fx = fakeFx(opts.fx)
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
@@ -129,8 +198,8 @@ export function fakeBackend(opts: Options = {}) {
     const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : undefined
     calls.push({ method, path, body })
 
-    const ledgerResponse = ledger.handle(method, path, body)
-    if (ledgerResponse) return ledgerResponse
+    const featureResponse = ledger.handle(method, path, body) ?? fx.handle(method, path, body)
+    if (featureResponse) return featureResponse
 
     switch (`${method} ${path}`) {
       case 'GET /api/auth/me':

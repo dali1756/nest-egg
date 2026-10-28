@@ -1,4 +1,4 @@
-import { Link, Outlet } from 'react-router'
+import { Link, Outlet, useLocation } from 'react-router'
 import { useCurrentUser } from '../hooks/useCurrentUser'
 import UserMenu from './UserMenu'
 
@@ -20,13 +20,40 @@ function BrandMark() {
   )
 }
 
+const sections = [
+  { to: '/', label: '記帳', prefix: '/entries/' },
+  { to: '/fx', label: '換匯', prefix: '/fx/' },
+]
+
+const tabClass =
+  'shrink-0 rounded-control px-3 py-1.5 text-sm font-semibold text-muted-foreground transition-colors hover:text-heading focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-ring aria-[current=page]:bg-brand-soft aria-[current=page]:text-primary'
+
+function SectionTabs() {
+  const { pathname } = useLocation()
+  return (
+    <nav
+      aria-label="功能"
+      className="flex gap-1 max-[480px]:order-last max-[480px]:-mx-1 max-[480px]:w-full max-[480px]:overflow-x-auto max-[480px]:pb-2 min-[481px]:ml-3"
+    >
+      {sections.map(({ to, label, prefix }) => {
+        const current = pathname === to || pathname.startsWith(prefix)
+        return (
+          <Link key={to} to={to} aria-current={current ? 'page' : undefined} className={tabClass}>
+            {label}
+          </Link>
+        )
+      })}
+    </nav>
+  )
+}
+
 function AppLayout() {
   const { data: user } = useCurrentUser()
 
   return (
     <>
       <header className="border-b border-border bg-white/85">
-        <div className="flex h-16 items-center gap-2.5 px-6">
+        <div className="flex min-h-16 flex-wrap items-center gap-x-2.5 px-6">
           <Link
             to="/"
             className="flex items-center gap-2.5 rounded-lg focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-ring"
@@ -37,6 +64,7 @@ function AppLayout() {
           <span className="border-l border-border pl-2.5 text-xs text-muted-foreground max-[480px]:hidden">
             記帳與資產
           </span>
+          {user && <SectionTabs />}
           {user && <UserMenu email={user.email} />}
         </div>
       </header>

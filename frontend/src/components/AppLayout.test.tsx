@@ -1,6 +1,6 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { expect, test } from 'vitest'
+import { describe, expect, test } from 'vitest'
 import { fakeBackend } from '../test/fakeBackend'
 import { renderApp } from '../test/renderApp'
 
@@ -162,4 +162,61 @@ test('choosing system status opens the status page and closes the menu', async (
   await waitFor(() => expect(router.state.location.pathname).toBe('/status'))
   expect(toggle).toHaveAttribute('aria-expanded', 'false')
   expect(await screen.findByRole('heading', { level: 1, name: '系統狀態' })).toBeInTheDocument()
+})
+
+describe('section tabs', () => {
+  async function tabs() {
+    const nav = await screen.findByRole('navigation', { name: '功能' })
+    return {
+      ledger: within(nav).getByRole('link', { name: '記帳' }),
+      fx: within(nav).getByRole('link', { name: '換匯' }),
+    }
+  }
+
+  test.each(['/', '/entries/new'])('marks 記帳 as the current section on %s', async (path) => {
+    fakeBackend({ user: 'me@example.com' })
+    renderApp(path)
+
+    const { ledger, fx } = await tabs()
+    expect(ledger).toHaveAttribute('href', '/')
+    expect(ledger).toHaveAttribute('aria-current', 'page')
+    expect(fx).not.toHaveAttribute('aria-current')
+  })
+
+  test.each(['/fx', '/fx/12'])('marks 換匯 as the current section on %s', async (path) => {
+    fakeBackend({ user: 'me@example.com' })
+    renderApp(path)
+
+    const { ledger, fx } = await tabs()
+    expect(fx).toHaveAttribute('href', '/fx')
+    expect(fx).toHaveAttribute('aria-current', 'page')
+    expect(ledger).not.toHaveAttribute('aria-current')
+  })
+
+  test('marks no section on the status page', async () => {
+    fakeBackend({ user: 'me@example.com' })
+    renderApp('/status')
+
+    const { ledger, fx } = await tabs()
+    expect(ledger).not.toHaveAttribute('aria-current')
+    expect(fx).not.toHaveAttribute('aria-current')
+  })
+
+  test('switches to the fx page', async () => {
+    fakeBackend({ user: 'me@example.com' })
+    const { router } = renderApp('/')
+
+    await userEvent.setup().click((await tabs()).fx)
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/fx'))
+    expect((await tabs()).fx).toHaveAttribute('aria-current', 'page')
+  })
+
+  test('are hidden when logged out', async () => {
+    fakeBackend({ user: null })
+    renderApp('/login')
+
+    await screen.findByRole('heading', { name: '登入' })
+    expect(screen.queryByRole('navigation', { name: '功能' })).not.toBeInTheDocument()
+  })
 })
