@@ -25,6 +25,20 @@ type Currency struct {
 	MinorUnit int16
 }
 
+type FxTrade struct {
+	ID             int64
+	UserID         int64
+	TradedOn       time.Time
+	Side           string
+	Currency       string
+	ForeignAmount  decimal.Decimal
+	TwdAmount      decimal.Decimal
+	MarketRate     *decimal.Decimal
+	MarketRateDate *time.Time
+	Note           string
+	CreatedAt      time.Time
+}
+
 type LedgerEntry struct {
 	ID             int64
 	UserID         int64

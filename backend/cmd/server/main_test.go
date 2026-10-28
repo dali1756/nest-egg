@@ -20,6 +20,7 @@ import (
 	"nest-egg/backend/internal/auth"
 	"nest-egg/backend/internal/auth/authtest"
 	"nest-egg/backend/internal/currency"
+	"nest-egg/backend/internal/fx"
 	"nest-egg/backend/internal/ledger"
 	"nest-egg/backend/internal/platform/apperr"
 	"nest-egg/backend/internal/platform/config"
@@ -73,6 +74,7 @@ func newTestHandlers(t *testing.T, cfg config.Config, limit func(http.Handler) h
 		currency:  currency.NewHandler(currencies),
 		rate:      rate.NewHandler(rate.NewService(fakeRateStore{}, nil, currencies)),
 		ledger:    ledger.NewHandler(ledger.NewService(emptyLedgerStore{}, currencies, fakeRateStore{})),
+		fx:        fx.NewHandler(fx.NewService(emptyFxStore{}, currencies, fakeRateStore{})),
 		rateLimit: limit,
 	}
 }
@@ -453,6 +455,27 @@ func (emptyLedgerStore) Totals(context.Context, int64, time.Time, time.Time) ([]
 	return nil, nil
 }
 
+// emptyFxStore 是沒有任何資料的 fx.Store，只用來確認路徑有接上 handler
+type emptyFxStore struct{}
+
+func (emptyFxStore) CreateTrade(context.Context, int64, fx.TradeValues) (int64, error) {
+	return 0, apperr.ErrNotFound
+}
+
+func (emptyFxStore) Trade(context.Context, int64, int64) (fx.Trade, error) {
+	return fx.Trade{}, apperr.ErrNotFound
+}
+
+func (emptyFxStore) UpdateTrade(context.Context, int64, int64, fx.TradeValues) error {
+	return apperr.ErrNotFound
+}
+
+func (emptyFxStore) DeleteTrade(context.Context, int64, int64) error { return apperr.ErrNotFound }
+
+func (emptyFxStore) Trades(context.Context, int64, time.Time, time.Time) ([]fx.Trade, error) {
+	return nil, nil
+}
+
 type fakeRateStore struct{}
 
 func (fakeRateStore) Upsert(context.Context, string, []rate.Rate) (rate.UpsertResult, error) {
@@ -525,6 +548,12 @@ var apiRoutes = []struct {
 	{http.MethodGet, "/api/ledger-entries/1", false},
 	{http.MethodPut, "/api/ledger-entries/1", false},
 	{http.MethodDelete, "/api/ledger-entries/1", false},
+	{http.MethodGet, "/api/fx-trades?month=2026-10", false},
+	{http.MethodPost, "/api/fx-trades", false},
+	{http.MethodGet, "/api/fx-trades/preview?side=buy&currency=USD&traded_on=2026-10-27&foreign_amount=1000&twd_amount=32420", false},
+	{http.MethodGet, "/api/fx-trades/1", false},
+	{http.MethodPut, "/api/fx-trades/1", false},
+	{http.MethodDelete, "/api/fx-trades/1", false},
 }
 
 func TestEveryRouteHasTheRightProtection(t *testing.T) {

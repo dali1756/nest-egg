@@ -5,6 +5,7 @@ import (
 
 	"nest-egg/backend/internal/auth"
 	"nest-egg/backend/internal/currency"
+	"nest-egg/backend/internal/fx"
 	"nest-egg/backend/internal/ledger"
 	"nest-egg/backend/internal/platform/health"
 	"nest-egg/backend/internal/platform/httpx"
@@ -17,6 +18,7 @@ type handlers struct {
 	currency  *currency.Handler
 	rate      *rate.Handler
 	ledger    *ledger.Handler
+	fx        *fx.Handler
 	rateLimit func(http.Handler) http.Handler
 }
 
@@ -42,6 +44,12 @@ func addRoutes(public, protected *http.ServeMux, h handlers) {
 	protected.Handle("GET /api/ledger-entries/{id}", httpx.Handler(h.ledger.GetEntry))
 	protected.Handle("PUT /api/ledger-entries/{id}", httpx.Handler(h.ledger.UpdateEntry))
 	protected.Handle("DELETE /api/ledger-entries/{id}", httpx.Handler(h.ledger.DeleteEntry))
+	protected.Handle("GET /api/fx-trades", httpx.Handler(h.fx.ListTrades))
+	protected.Handle("POST /api/fx-trades", httpx.Handler(h.fx.CreateTrade))
+	protected.Handle("GET /api/fx-trades/preview", httpx.Handler(h.fx.PreviewTrade))
+	protected.Handle("GET /api/fx-trades/{id}", httpx.Handler(h.fx.GetTrade))
+	protected.Handle("PUT /api/fx-trades/{id}", httpx.Handler(h.fx.UpdateTrade))
+	protected.Handle("DELETE /api/fx-trades/{id}", httpx.Handler(h.fx.DeleteTrade))
 }
 
 func newRouter(h handlers) (public, protected *http.ServeMux) {

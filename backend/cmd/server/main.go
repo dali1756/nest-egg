@@ -16,6 +16,7 @@ import (
 	"nest-egg/backend/db/migrations"
 	"nest-egg/backend/internal/auth"
 	"nest-egg/backend/internal/currency"
+	"nest-egg/backend/internal/fx"
 	"nest-egg/backend/internal/ledger"
 	"nest-egg/backend/internal/platform/config"
 	"nest-egg/backend/internal/platform/db"
@@ -64,6 +65,7 @@ func run() error {
 	rateRepo := rate.NewRepository(pool)
 	rates := rate.NewService(rateRepo, rate.NewCBCProvider(rate.CBCURL), currencies)
 	ledgerSvc := ledger.NewService(ledger.NewRepository(pool), currencies, rateRepo)
+	fxSvc := fx.NewService(fx.NewRepository(pool), currencies, rateRepo)
 
 	h := handlers{
 		health:    health.NewHandler(pool),
@@ -71,6 +73,7 @@ func run() error {
 		currency:  currency.NewHandler(currencies),
 		rate:      rate.NewHandler(rates),
 		ledger:    ledger.NewHandler(ledgerSvc),
+		fx:        fx.NewHandler(fxSvc),
 		rateLimit: newRateLimit(cfg),
 	}
 	srv := newServer(cfg.HTTPAddr, newHandler(h, cfg))
