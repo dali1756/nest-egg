@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { expect, test } from 'vitest'
+import { describe, expect, test } from 'vitest'
 import { freezeTime } from '../test/clock'
 import { makeEntry } from '../test/entries'
 import { fakeBackend } from '../test/fakeBackend'
@@ -72,8 +72,7 @@ test('records income on an earlier date and returns to that month', async () => 
   await user.click(screen.getByRole('button', { name: '儲存' }))
 
   await waitFor(() => expect(router.state.location.search).toBe('?month=2026-09'))
-  expect(await screen.findByText('薪水')).toBeInTheDocument()
-  expect(screen.getByText('+50,000.00')).toBeInTheDocument()
+  expect(await screen.findByRole('link', { name: /薪水/ })).toHaveTextContent('+50,000.00')
 })
 
 test('switching between expense and income shows that kind of categories and clears the choice', async () => {
@@ -325,4 +324,54 @@ test('a TWD entry shows no market rate', async () => {
   await screen.findByRole('heading', { level: 1, name: '修改紀錄' })
   await screen.findByLabelText('金額')
   expect(screen.queryByText(/市場參考匯率/)).not.toBeInTheDocument()
+})
+
+describe('back-filling a day picked on the calendar', () => {
+  freezeTime('2026-10-27T04:00:00Z')
+
+  test('defaults the date to the day in the URL', async () => {
+    fakeBackend({ user: 'me@example.com' })
+
+    renderApp('/entries/new?date=2026-10-26')
+
+    expect(await screen.findByLabelText('日期')).toHaveValue('2026-10-26')
+  })
+
+  test.each(['2026-10-28', '2026-13-01'])('uses today instead of the unusable date %s', async (date) => {
+    fakeBackend({ user: 'me@example.com' })
+
+    renderApp(`/entries/new?date=${date}`)
+
+    expect(await screen.findByLabelText('日期')).toHaveValue('2026-10-27')
+  })
+
+  test('returns to the picked day after saving', async () => {
+    fakeBackend({ user: 'me@example.com' })
+    const { router } = renderApp('/entries/new?date=2026-10-26')
+
+    await fillAndSave({ category: '飲食', amount: '85' })
+
+    await waitFor(() => expect(router.state.location.search).toBe('?date=2026-10-26'))
+    expect(router.state.location.pathname).toBe('/')
+    expect(await screen.findByRole('link', { name: /飲食/ })).toHaveTextContent('−85.00')
+    expect(screen.getByRole('heading', { level: 3, name: '10/26（一）' })).toBeInTheDocument()
+  })
+
+  test('returns to the day the entry was saved on when the date was changed', async () => {
+    fakeBackend({ user: 'me@example.com' })
+    const { router } = renderApp('/entries/new?date=2026-10-26')
+
+    await fillAndSave({ category: '飲食', date: '2026-10-20' })
+
+    await waitFor(() => expect(router.state.location.search).toBe('?date=2026-10-20'))
+  })
+
+  test('editing ignores the date in the URL', async () => {
+    fakeBackend({ user: 'me@example.com', ledger: { entries: [lunch] } })
+
+    renderApp('/entries/1?date=2026-10-01')
+
+    expect(await screen.findByRole('heading', { level: 1, name: '修改紀錄' })).toBeInTheDocument()
+    expect(await screen.findByLabelText('日期')).toHaveValue('2026-10-20')
+  })
 })

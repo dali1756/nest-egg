@@ -2,7 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Controller, useForm, useWatch } from 'react-hook-form'
-import { useNavigate, useParams } from 'react-router'
+import { useNavigate, useParams, useSearchParams } from 'react-router'
 import { z } from 'zod'
 import { ApiError } from '../api/http'
 import {
@@ -24,7 +24,7 @@ import Notice from '../components/Notice'
 import PageMessage from '../components/PageMessage'
 import SelectField from '../components/SelectField'
 import TextLink from '../components/TextLink'
-import { taipeiToday } from '../format/date'
+import { pickableDate, taipeiToday } from '../format/date'
 import { decimalPlaces } from '../format/money'
 import { clearUserIfUnauthorized } from '../hooks/useCurrentUser'
 import { ledgerEntriesKey, useLedgerEntry } from '../hooks/useLedger'
@@ -64,9 +64,10 @@ function entrySchema(today: string, currencies: Currency[]) {
 
 type EntryValues = z.infer<ReturnType<typeof entrySchema>>
 
-function defaultValuesFor(entry: Entry | undefined): EntryValues {
+function defaultValuesFor(entry: Entry | undefined, pickedDate: string | undefined): EntryValues {
   if (!entry) {
-    return { kind: 'expense', occurred_on: taipeiToday(), category_id: noCategory, currency: baseCurrency, amount: '', note: '' }
+    const occurred_on = pickedDate ?? taipeiToday()
+    return { kind: 'expense', occurred_on, category_id: noCategory, currency: baseCurrency, amount: '', note: '' }
   }
   return {
     kind: entry.kind,
@@ -145,21 +146,27 @@ function DeleteEntryButton({ entry, onDeleted }: { entry: Entry; onDeleted: () =
   )
 }
 
-function EntryForm({ categories, currencies, entry }: { categories: Category[]; currencies: Currency[]; entry?: Entry }) {
+function ledgerPath(occurredOn: string, openedFromPickedDay: boolean): string {
+  return openedFromPickedDay ? `/?date=${occurredOn}` : `/?month=${occurredOn.slice(0, 7)}`
+}
+
+type EntryFormProps = { categories: Category[]; currencies: Currency[]; entry?: Entry; pickedDate?: string }
+
+function EntryForm({ categories, currencies, entry, pickedDate }: EntryFormProps) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const refreshAndShowMonth = (occurredOn: string) => {
-    navigate(`/?month=${occurredOn.slice(0, 7)}`)
+  const refreshAndShowLedger = (occurredOn: string) => {
+    navigate(ledgerPath(occurredOn, pickedDate !== undefined))
     void queryClient.invalidateQueries({ queryKey: ledgerEntriesKey })
   }
   const { register, handleSubmit, control, setValue, setError, formState } = useForm<EntryValues>({
     resolver: zodResolver(entrySchema(taipeiToday(), currencies)),
-    defaultValues: defaultValuesFor(entry),
+    defaultValues: defaultValuesFor(entry, pickedDate),
   })
   const kind = useWatch({ control, name: 'kind' })
   const mutation = useMutation({
     mutationFn: (input: EntryInput) => (entry ? updateEntry(entry.id, input) : createEntry(input)),
-    onSuccess: (saved) => refreshAndShowMonth(saved.occurred_on),
+    onSuccess: (saved) => refreshAndShowLedger(saved.occurred_on),
     onError: (err) => {
       clearUserIfUnauthorized(queryClient, err)
       for (const [field, message] of rejectedFields(err)) setError(field, { message })
@@ -233,7 +240,7 @@ function EntryForm({ categories, currencies, entry }: { categories: Category[]; 
       <Button type="submit" block disabled={mutation.isPending}>
         {mutation.isPending ? '儲存中…' : '儲存'}
       </Button>
-      {entry && <DeleteEntryButton entry={entry} onDeleted={() => refreshAndShowMonth(entry.occurred_on)} />}
+      {entry && <DeleteEntryButton entry={entry} onDeleted={() => refreshAndShowLedger(entry.occurred_on)} />}
     </form>
   )
 }
@@ -253,7 +260,9 @@ function parseEntryId(id: string | undefined): number | undefined {
 
 function EntryFormPage() {
   const { id } = useParams()
+  const [searchParams] = useSearchParams()
   const editing = id !== undefined
+  const pickedDate = editing ? undefined : pickableDate(searchParams.get('date'), taipeiToday())
   const entryId = parseEntryId(id)
   const categories = useQuery({ queryKey: ['categories'], queryFn: getCategories })
   const currencies = useQuery({ queryKey: ['currencies'], queryFn: getCurrencies })
@@ -269,7 +278,7 @@ function EntryFormPage() {
     <main className="mx-auto max-w-120 px-5 pb-16">
       <h1 className="mt-12 text-3xl font-bold tracking-[-0.02em] text-heading">{editing ? '修改紀錄' : '記一筆'}</h1>
       {ready ? (
-        <EntryForm categories={categories.data} currencies={currencies.data} entry={entry.data} />
+        <EntryForm categories={categories.data} currencies={currencies.data} entry={entry.data} pickedDate={pickedDate} />
       ) : (
         <p className="mt-6 text-muted-foreground">載入中…</p>
       )}

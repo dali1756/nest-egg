@@ -1,5 +1,16 @@
-import { describe, expect, test } from 'vitest'
-import { dayLabel, isMonth, monthLabel, shiftMonth, taipeiMonth, taipeiToday } from './date'
+import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest'
+import {
+  dayLabel,
+  fromCalendarDay,
+  isDate,
+  isMonth,
+  monthLabel,
+  pickableDate,
+  shiftMonth,
+  taipeiMonth,
+  taipeiToday,
+  toCalendarDay,
+} from './date'
 
 describe('taipeiToday', () => {
   test('uses the Taipei date, not the UTC date', () => {
@@ -28,6 +39,42 @@ describe('shiftMonth', () => {
 describe('isMonth', () => {
   test.each(['2026-10', '2026-01', '2026-12'])('accepts %s', (m) => expect(isMonth(m)).toBe(true))
   test.each(['2026-13', '2026-00', '202610', '2026-1', 'abc', ''])('rejects %s', (m) => expect(isMonth(m)).toBe(false))
+})
+
+describe('isDate', () => {
+  test.each(['2026-10-26', '2024-02-29'])('accepts %s', (d) => expect(isDate(d)).toBe(true))
+  test.each(['2026-02-30', '2026-13-01', '2026-10-1', '20261026', 'abc', ''])('rejects %s', (d) => expect(isDate(d)).toBe(false))
+})
+
+describe('pickableDate', () => {
+  test.each(['2026-10-26', '2026-10-27'])('keeps %s on or before today', (d) => expect(pickableDate(d, '2026-10-27')).toBe(d))
+  test.each(['2026-10-28', '2026-02-30', null])('drops %s', (d) => expect(pickableDate(d, '2026-10-27')).toBeUndefined())
+})
+
+function useBrowserTimeZone(timeZone: string) {
+  beforeAll(() => {
+    vi.stubEnv('TZ', timeZone)
+  })
+  afterAll(() => {
+    vi.unstubAllEnvs()
+  })
+}
+
+describe.each(['Asia/Taipei', 'America/Los_Angeles', 'Pacific/Kiritimati'])('calendar days in %s', (timeZone) => {
+  useBrowserTimeZone(timeZone)
+
+  test('toCalendarDay is that day in the browser time zone', () => {
+    const day = toCalendarDay('2026-10-26')
+    expect([day.getFullYear(), day.getMonth() + 1, day.getDate(), day.getDay()]).toEqual([2026, 10, 26, 1])
+  })
+
+  test('fromCalendarDay reads the day in the browser time zone', () => {
+    expect(fromCalendarDay(new Date(2026, 9, 26))).toBe('2026-10-26')
+  })
+
+  test.each(['2024-02-29', '2026-01-01', '2026-12-31'])('%s survives the round trip', (date) =>
+    expect(fromCalendarDay(toCalendarDay(date))).toBe(date),
+  )
 })
 
 describe('labels', () => {

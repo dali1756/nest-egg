@@ -22,7 +22,7 @@
 | 會員 | 註冊、登入、session、鎖定、忘記與變更密碼 | 登入後的首頁 |
 | 1 基礎架構 | `/api/` 預設需要登入、統一錯誤處理、request ID、panic 處理、「資料屬於使用者」規則與檢查 | 每個回應都有 `X-Request-ID` |
 | 2 幣別與每日匯率 | `currencies`、央行收盤匯率（2008 年起的歷史）、每天更新存進 `rate_snapshots`、週末與假日往回找 | 沒有畫面；登入後開 `/api/rates?base=USD&quote=TWD` 看到最近一個營業日的匯率 |
-| 3 收支記帳 | 每個使用者的分類、收入與支出（TWD、USD，每筆一個幣別）、外幣帶入市場參考匯率 | 記帳頁成為登入後首頁：依月份列出紀錄與各幣別合計、記一筆、修改、刪除；系統狀態頁移到 `/status` |
+| 3 收支記帳 | 每個使用者的分類、收入與支出（TWD、USD，每筆一個幣別）、外幣帶入市場參考匯率 | 記帳頁成為登入後首頁：依月份列出紀錄與各幣別合計、記一筆、修改、刪除；月曆標出有紀錄的日子，點某一天只看那天的紀錄（`/?date=`），從那天按「記一筆」直接補登；系統狀態頁移到 `/status` |
 | 4 換匯 | 換匯交易、匯差、每月加權平均成本 | 換匯紀錄與每月成本圖 |
 | 5 總覽 | 各幣別餘額、外幣均價與損益（移動平均）、台幣總額、本月各分類花費 | 總資產頁第一版 |
 | 6 台股 | 買進、賣出、每日收盤價，買賣連動台幣現金；在每日列表標示「股票」 | 股票區：市值、均價、損益 |
@@ -75,6 +75,7 @@
 | 資料請求  | TanStack Query                      | 快取、loading 與錯誤狀態                                                                                                                                                    |
 | 表單      | React Hook Form + Zod               | 表單驗證                                                                                                                                                                    |
 | 圖表      | Recharts                            | 每月成本圖、匯率走勢圖                                                                                                                                                      |
+| 月曆      | react-day-picker                    | 記帳頁的月曆：方向鍵移動、無障礙由套件處理；不載入它的 CSS，用 `classNames` 套 `src/index.css` 的變數                                                                        |
 
 sqlc 的型別對應（`sqlc.yaml`）：`numeric` → `decimal.Decimal`、`date` → `time.Time`。pgx 透過 `decimal.Decimal` 本身的 `sql.Scanner`／`driver.Valuer` 就能讀寫（含陣列），不需要 `pgx-shopspring-decimal`。`DATE` 讀出來是 UTC 午夜，要用 `taipei.FromDBDate` 換成台北日期。
 
@@ -104,7 +105,7 @@ nest-egg/
 │   └── go.mod                 # module nest-egg/backend
 ├── frontend/
 │   ├── Dockerfile             # 開發用映像（Vite）
-│   └── src/{api,pages,components,hooks,format,validation,test}  # routes.tsx 定義路徑；format 放日期與金額的顯示格式（台北日期、千分位）；validation 放和後端共用規則的 Zod schema
+│   └── src/{api,pages,components,hooks,format,validation,test}  # routes.tsx 定義路徑；format 放日期與金額的顯示格式（台北日期、千分位）與日期計算（網址日期是否可用、月曆元件的日期轉換）；validation 放和後端共用規則的 Zod schema
 ├── docs/
 │   └── architecture.md
 ├── docker-compose.yml         # 開發環境：db、backend、frontend 一起啟動

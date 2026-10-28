@@ -23,6 +23,34 @@ function dateParts(date: string): number[] {
   return date.split('-').map((part) => Number.parseInt(part, 10))
 }
 
+function utcDate(date: string): Date {
+  const [year, m, d] = dateParts(date)
+  return new Date(Date.UTC(year, m - 1, d))
+}
+
+const datePattern = /^\d{4}-\d{2}-\d{2}$/
+
+export function isDate(value: string): boolean {
+  return datePattern.test(value) && utcDate(value).toISOString().startsWith(value)
+}
+
+export function pickableDate(value: string | null, today: string): string | undefined {
+  return value !== null && isDate(value) && value <= today ? value : undefined
+}
+
+export function toCalendarDay(date: string): Date {
+  const [year, m, d] = dateParts(date)
+  return new Date(year, m - 1, d)
+}
+
+function twoDigits(value: number): string {
+  return String(value).padStart(2, '0')
+}
+
+export function fromCalendarDay(day: Date): string {
+  return `${day.getFullYear()}-${twoDigits(day.getMonth() + 1)}-${twoDigits(day.getDate())}`
+}
+
 export function shiftMonth(month: string, delta: number): string {
   const [year, m] = dateParts(month)
   const index = year * 12 + (m - 1) + delta
@@ -38,7 +66,6 @@ export function monthLabel(month: string): string {
 const weekdays = '日一二三四五六'
 
 export function dayLabel(date: string): string {
-  const [year, m, d] = dateParts(date)
-  const weekday = new Date(Date.UTC(year, m - 1, d)).getUTCDay()
-  return `${m}/${d}（${weekdays[weekday]}）`
+  const [, m, d] = dateParts(date)
+  return `${m}/${d}（${weekdays[utcDate(date).getUTCDay()]}）`
 }
