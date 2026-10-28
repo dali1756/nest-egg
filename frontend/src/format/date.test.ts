@@ -2,9 +2,11 @@ import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest'
 import {
   dayLabel,
   fromCalendarDay,
+  groupByDay,
   isDate,
   isMonth,
   monthLabel,
+  monthOrCurrent,
   pickableDate,
   shiftMonth,
   taipeiMonth,
@@ -39,6 +41,27 @@ describe('shiftMonth', () => {
 describe('isMonth', () => {
   test.each(['2026-10', '2026-01', '2026-12'])('accepts %s', (m) => expect(isMonth(m)).toBe(true))
   test.each(['2026-13', '2026-00', '202610', '2026-1', 'abc', ''])('rejects %s', (m) => expect(isMonth(m)).toBe(false))
+})
+
+describe('monthOrCurrent', () => {
+  const now = new Date('2026-10-28T02:00:00Z')
+  test('keeps a valid month', () => expect(monthOrCurrent('2026-09', now)).toBe('2026-09'))
+  test.each(['2026-13', '', null])('falls back to the Taipei month for %j', (m) => expect(monthOrCurrent(m, now)).toBe('2026-10'))
+})
+
+describe('groupByDay', () => {
+  test('groups items by day in the order they come', () => {
+    const items = [
+      { day: '2026-10-27', id: 1 },
+      { day: '2026-10-27', id: 2 },
+      { day: '2026-10-15', id: 3 },
+    ]
+    const groups = groupByDay(items, (item) => item.day).map(([day, group]) => [day, group.map((item) => item.id)])
+    expect(groups).toEqual([
+      ['2026-10-27', [1, 2]],
+      ['2026-10-15', [3]],
+    ])
+  })
 })
 
 describe('isDate', () => {

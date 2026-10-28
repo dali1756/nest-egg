@@ -1,12 +1,8 @@
-import { request } from './http'
+import { request, type DecimalString } from './http'
 
 export type Kind = 'income' | 'expense'
 
-export type DecimalString = `${number}`
-
 export type Category = { id: number; kind: Kind; name: string }
-
-export type Currency = { code: string; name: string; minor_unit: number }
 
 export type Entry = {
   id: number
@@ -35,11 +31,6 @@ export type EntryInput = {
 export async function getCategories(): Promise<Category[]> {
   const res = await request<{ categories: Category[] }>('GET', '/api/categories')
   return res.categories
-}
-
-export async function getCurrencies(): Promise<Currency[]> {
-  const res = await request<{ currencies: Currency[] }>('GET', '/api/currencies')
-  return res.currencies
 }
 
 export function getMonth(month: string): Promise<MonthLedger> {

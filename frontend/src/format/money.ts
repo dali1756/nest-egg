@@ -1,4 +1,4 @@
-import type { DecimalString } from '../api/ledger'
+import type { DecimalString } from '../api/http'
 
 export function decimalPlaces(value: string): number {
   const dot = value.indexOf('.')

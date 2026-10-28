@@ -1,64 +1,57 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { useNavigate, useParams, useSearchParams } from 'react-router'
 import { z } from 'zod'
 import { ApiError } from '../api/http'
+import { getCurrencies, TWD, type Currency } from '../api/currencies'
+import { fieldErrorsFrom, rejectedFields } from '../api/fieldErrors'
 import {
   createEntry,
   deleteEntry,
   getCategories,
-  getCurrencies,
   updateEntry,
   type Category,
-  type Currency,
   type Entry,
   type EntryInput,
   type Kind,
 } from '../api/ledger'
 import Button from '../components/Button'
 import ChoiceGroup from '../components/ChoiceGroup'
+import ConfirmDeleteButton from '../components/ConfirmDeleteButton'
 import Field from '../components/Field'
 import Notice from '../components/Notice'
 import PageMessage from '../components/PageMessage'
 import SelectField from '../components/SelectField'
 import TextLink from '../components/TextLink'
 import { pickableDate, taipeiToday } from '../format/date'
-import { decimalPlaces } from '../format/money'
+import { parsePathId } from '../format/id'
 import { clearUserIfUnauthorized } from '../hooks/useCurrentUser'
 import { ledgerEntriesKey, useLedgerEntry } from '../hooks/useLedger'
+import { amountField, decimalPlacesProblem } from '../validation/amount'
+import { noteField, pastDateField } from '../validation/fields'
 
 const kinds: { value: Kind; label: string }[] = [
   { value: 'expense', label: '支出' },
   { value: 'income', label: '收入' },
 ]
 
-const baseCurrency = 'TWD'
-
 const noCategory = 0
-
-const amountPattern = /^[0-9]{1,16}(\.[0-9]+)?$/
 
 function entrySchema(today: string, currencies: Currency[]) {
   return z
     .object({
       kind: z.enum(['expense', 'income']),
-      occurred_on: z.string().min(1, '請選擇日期').refine((date) => date <= today, '日期不能晚於今天'),
+      occurred_on: pastDateField(today),
       category_id: z.int().positive('請選擇分類'),
       currency: z.string().min(1, '請選擇幣別'),
-      amount: z
-        .string()
-        .min(1, '請輸入金額')
-        .regex(amountPattern, '請輸入數字，例如 120 或 32.5')
-        .refine((amount) => /[1-9]/.test(amount), '請輸入大於 0 的金額'),
-      note: z.string().max(200, '備註最多 200 字'),
+      amount: amountField(),
+      note: noteField(),
     })
     .superRefine((values, ctx) => {
       const minorUnit = currencies.find((c) => c.code === values.currency)?.minor_unit
-      if (minorUnit !== undefined && decimalPlaces(values.amount) > minorUnit) {
-        ctx.addIssue({ code: 'custom', path: ['amount'], message: `金額最多 ${minorUnit} 位小數` })
-      }
+      const problem = decimalPlacesProblem(values.amount, minorUnit)
+      if (problem) ctx.addIssue({ code: 'custom', path: ['amount'], message: problem })
     })
 }
 
@@ -67,7 +60,7 @@ type EntryValues = z.infer<ReturnType<typeof entrySchema>>
 function defaultValuesFor(entry: Entry | undefined, pickedDate: string | undefined): EntryValues {
   if (!entry) {
     const occurred_on = pickedDate ?? taipeiToday()
-    return { kind: 'expense', occurred_on, category_id: noCategory, currency: baseCurrency, amount: '', note: '' }
+    return { kind: 'expense', occurred_on, category_id: noCategory, currency: TWD, amount: '', note: '' }
   }
   return {
     kind: entry.kind,
@@ -91,18 +84,8 @@ const serverFieldMessages: Record<keyof EntryInput, string> = {
   note: '備註最多 200 字',
 }
 
-function fieldErrorsFrom(err: Error) {
-  return err instanceof ApiError && err.status === 422 ? err.fields : undefined
-}
-
-function rejectedFields(err: Error): [keyof EntryInput, string][] {
-  const fields = fieldErrorsFrom(err) ?? {}
-  const names = Object.keys(serverFieldMessages) as (keyof EntryInput)[]
-  return names.filter((name) => fields[name]).map((name) => [name, serverFieldMessages[name]])
-}
-
 function MarketRateNote({ entry }: { entry: Entry }) {
-  if (entry.currency === baseCurrency) return null
+  if (entry.currency === TWD) return null
   if (entry.market_rate === null) return <p className="text-sm text-muted-foreground">查不到這天的市場參考匯率</p>
   return (
     <div className="text-sm text-muted-foreground">
@@ -110,38 +93,6 @@ function MarketRateNote({ entry }: { entry: Entry }) {
         市場參考匯率 {entry.market_rate}（{entry.market_rate_date}）
       </p>
       <p>資料來源：中央銀行</p>
-    </div>
-  )
-}
-
-function DeleteEntryButton({ entry, onDeleted }: { entry: Entry; onDeleted: () => void }) {
-  const queryClient = useQueryClient()
-  const [confirming, setConfirming] = useState(false)
-  const deletion = useMutation({
-    mutationFn: () => deleteEntry(entry.id),
-    onSuccess: onDeleted,
-    onError: (err) => clearUserIfUnauthorized(queryClient, err),
-  })
-
-  if (!confirming) {
-    return (
-      <Button type="button" variant="quiet" onClick={() => setConfirming(true)}>
-        刪除
-      </Button>
-    )
-  }
-  return (
-    <div className="flex flex-col gap-3 rounded-control border border-destructive-soft bg-destructive-soft/40 p-4">
-      <p className="text-sm font-semibold text-heading">確定要刪除這筆紀錄嗎？</p>
-      {deletion.isError && <Notice tone="error">刪除失敗，請稍後再試</Notice>}
-      <div className="flex gap-2">
-        <Button type="button" variant="danger" disabled={deletion.isPending} onClick={() => deletion.mutate()}>
-          確定刪除
-        </Button>
-        <Button type="button" variant="quiet" onClick={() => setConfirming(false)}>
-          取消
-        </Button>
-      </div>
     </div>
   )
 }
@@ -169,7 +120,7 @@ function EntryForm({ categories, currencies, entry, pickedDate }: EntryFormProps
     onSuccess: (saved) => refreshAndShowLedger(saved.occurred_on),
     onError: (err) => {
       clearUserIfUnauthorized(queryClient, err)
-      for (const [field, message] of rejectedFields(err)) setError(field, { message })
+      for (const [field, message] of rejectedFields(err, serverFieldMessages)) setError(field, { message })
     },
   })
   const { errors } = formState
@@ -240,7 +191,13 @@ function EntryForm({ categories, currencies, entry, pickedDate }: EntryFormProps
       <Button type="submit" block disabled={mutation.isPending}>
         {mutation.isPending ? '儲存中…' : '儲存'}
       </Button>
-      {entry && <DeleteEntryButton entry={entry} onDeleted={() => refreshAndShowLedger(entry.occurred_on)} />}
+      {entry && (
+        <ConfirmDeleteButton
+          question="確定要刪除這筆紀錄嗎？"
+          onDelete={() => deleteEntry(entry.id)}
+          onDeleted={() => refreshAndShowLedger(entry.occurred_on)}
+        />
+      )}
     </form>
   )
 }
@@ -254,16 +211,12 @@ function NotFound() {
   )
 }
 
-function parseEntryId(id: string | undefined): number | undefined {
-  return id !== undefined && /^\d+$/.test(id) ? Number.parseInt(id, 10) : undefined
-}
-
 function EntryFormPage() {
   const { id } = useParams()
   const [searchParams] = useSearchParams()
   const editing = id !== undefined
   const pickedDate = editing ? undefined : pickableDate(searchParams.get('date'), taipeiToday())
-  const entryId = parseEntryId(id)
+  const entryId = parsePathId(id)
   const categories = useQuery({ queryKey: ['categories'], queryFn: getCategories })
   const currencies = useQuery({ queryKey: ['currencies'], queryFn: getCurrencies })
   const entry = useLedgerEntry(entryId)

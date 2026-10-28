@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest'
 import { makeEntry } from '../test/entries'
 import { stubFetch } from '../test/stubFetch'
 import { ApiError } from './http'
-import { createEntry, deleteEntry, getCategories, getCurrencies, getEntry, getMonth, updateEntry } from './ledger'
+import { createEntry, deleteEntry, getCategories, getEntry, getMonth, updateEntry } from './ledger'
 
 const jsonHeaders = { 'Content-Type': 'application/json' }
 
@@ -15,11 +15,6 @@ describe('reading', () => {
     const fetchMock = stubFetch(200, { categories: [{ id: 1, kind: 'expense', name: '飲食' }] })
     await expect(getCategories()).resolves.toEqual([{ id: 1, kind: 'expense', name: '飲食' }])
     expect(fetchMock).toHaveBeenCalledWith('/api/categories', { method: 'GET', headers: jsonHeaders, body: undefined })
-  })
-
-  test('getCurrencies returns the currencies list', async () => {
-    stubFetch(200, { currencies: [{ code: 'TWD', name: '新臺幣', minor_unit: 2 }] })
-    await expect(getCurrencies()).resolves.toEqual([{ code: 'TWD', name: '新臺幣', minor_unit: 2 }])
   })
 
   test('getMonth asks for the given month', async () => {

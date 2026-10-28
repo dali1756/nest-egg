@@ -19,6 +19,16 @@ export function isMonth(value: string): boolean {
   return monthPattern.test(value)
 }
 
+export function monthOrCurrent(value: string | null, now = new Date()): string {
+  return value !== null && isMonth(value) ? value : taipeiMonth(now)
+}
+
+export function groupByDay<T>(items: T[], dayOf: (item: T) => string): [string, T[]][] {
+  const groups = new Map<string, T[]>()
+  for (const item of items) groups.set(dayOf(item), [...(groups.get(dayOf(item)) ?? []), item])
+  return [...groups]
+}
+
 function dateParts(date: string): number[] {
   return date.split('-').map((part) => Number.parseInt(part, 10))
 }

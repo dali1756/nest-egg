@@ -4,16 +4,11 @@ import type { Entry, MonthLedger, Total } from '../api/ledger'
 import Button from '../components/Button'
 import { buttonClassName } from '../components/buttonStyles'
 import MonthCalendar from '../components/MonthCalendar'
+import MonthNav from '../components/MonthNav'
 import Notice from '../components/Notice'
-import { dayLabel, isMonth, monthLabel, pickableDate, shiftMonth, taipeiMonth, taipeiToday } from '../format/date'
+import { dayLabel, groupByDay, monthOrCurrent, pickableDate, taipeiToday } from '../format/date'
 import { formatAmount } from '../format/money'
 import { useLedgerMonth } from '../hooks/useLedger'
-
-function groupByDate(entries: Entry[]): [string, Entry[]][] {
-  const groups = new Map<string, Entry[]>()
-  for (const entry of entries) groups.set(entry.occurred_on, [...(groups.get(entry.occurred_on) ?? []), entry])
-  return [...groups]
-}
 
 function SignedAmount({ entry }: { entry: Entry }) {
   const expense = entry.kind === 'expense'
@@ -22,28 +17,6 @@ function SignedAmount({ entry }: { entry: Entry }) {
       {expense ? '−' : '+'}
       {formatAmount(entry.amount)}
     </span>
-  )
-}
-
-function MonthNav({ month, onChange }: { month: string; onChange: (month: string) => void }) {
-  const navButton =
-    'flex size-9 cursor-pointer items-center justify-center rounded-control border border-border bg-card text-lg text-heading transition-colors enabled:hover:border-primary focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-default disabled:opacity-40'
-  return (
-    <nav aria-label="切換月份" className="mt-6 flex items-center gap-3">
-      <button type="button" aria-label="上個月" className={navButton} onClick={() => onChange(shiftMonth(month, -1))}>
-        ‹
-      </button>
-      <h2 className="min-w-32 text-center text-lg font-semibold text-heading">{monthLabel(month)}</h2>
-      <button
-        type="button"
-        aria-label="下個月"
-        className={navButton}
-        disabled={month >= taipeiMonth()}
-        onClick={() => onChange(shiftMonth(month, 1))}
-      >
-        ›
-      </button>
-    </nav>
   )
 }
 
@@ -98,7 +71,7 @@ function EntryItems({ entries }: { entries: Entry[] }) {
 }
 
 function EntryList({ entries }: { entries: Entry[] }) {
-  return groupByDate(entries).map(([date, dayEntries]) => (
+  return groupByDay(entries, (entry) => entry.occurred_on).map(([date, dayEntries]) => (
     <section key={date} aria-labelledby={`day-${date}`} className="mt-6">
       <h3 id={`day-${date}`} className={`mb-2 ${dayHeadingClassName}`}>
         {dayLabel(date)}
@@ -167,8 +140,7 @@ type LedgerView = { month: string; selectedDate?: string }
 function viewFrom(searchParams: URLSearchParams, today: string): LedgerView {
   const date = pickableDate(searchParams.get('date'), today)
   if (date) return { month: date.slice(0, 7), selectedDate: date }
-  const requested = searchParams.get('month') ?? ''
-  return { month: isMonth(requested) ? requested : taipeiMonth() }
+  return { month: monthOrCurrent(searchParams.get('month')) }
 }
 
 function LedgerPage() {

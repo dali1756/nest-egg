@@ -1,3 +1,5 @@
+export type DecimalString = `${number}`
+
 export class ApiError extends Error {
   status: number
   fields?: Record<string, string>
