@@ -1,13 +1,12 @@
 package fx
 
 import (
-	"fmt"
+	"context"
 	"net/http"
-	"strconv"
+	"net/url"
 	"time"
 
 	"nest-egg/backend/internal/auth"
-	"nest-egg/backend/internal/platform/apperr"
 	"nest-egg/backend/internal/platform/httpx"
 )
 
@@ -178,18 +177,20 @@ func (h *Handler) PreviewTrade(w http.ResponseWriter, r *http.Request) error {
 		TradedOn: q.Get("traded_on"), Side: q.Get("side"), Currency: q.Get("currency"),
 		ForeignAmount: q.Get("foreign_amount"), TWDAmount: q.Get("twd_amount"),
 	}
-	var t Trade
-	if q.Has("id") {
-		id, parseErr := strconv.ParseInt(q.Get("id"), 10, 64)
-		if parseErr != nil {
-			return fmt.Errorf("fx trade id %q: %w", q.Get("id"), apperr.ErrNotFound)
-		}
-		t, err = h.svc.PreviewChange(r.Context(), userID, id, in)
-	} else {
-		t, err = h.svc.PreviewNew(r.Context(), in)
-	}
+	t, err := h.preview(r.Context(), userID, q, in)
 	if err != nil {
 		return err
 	}
 	return httpx.WriteJSON(w, http.StatusOK, toRatesResponse(t))
+}
+
+func (h *Handler) preview(ctx context.Context, userID int64, q url.Values, in TradeInput) (Trade, error) {
+	if !q.Has("id") {
+		return h.svc.PreviewNew(ctx, in)
+	}
+	id, err := httpx.ParseID(q.Get("id"), "fx trade")
+	if err != nil {
+		return Trade{}, err
+	}
+	return h.svc.PreviewChange(ctx, userID, id, in)
 }
