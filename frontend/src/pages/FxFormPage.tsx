@@ -12,7 +12,9 @@ import ChoiceGroup from '../components/ChoiceGroup'
 import ConfirmDeleteButton from '../components/ConfirmDeleteButton'
 import Field from '../components/Field'
 import Notice from '../components/Notice'
+import OpeningCutoffNotice from '../components/OpeningCutoffNotice'
 import PageMessage from '../components/PageMessage'
+import RateSource from '../components/RateSource'
 import SelectField from '../components/SelectField'
 import TextLink from '../components/TextLink'
 import { taipeiToday } from '../format/date'
@@ -20,6 +22,7 @@ import { spreadText } from '../format/fx'
 import { parsePathId } from '../format/id'
 import { clearUserIfUnauthorized } from '../hooks/useCurrentUser'
 import { fxTradesKey, useFxPreview, useFxTrade, type FxPreviewInput } from '../hooks/useFx'
+import { portfolioKey } from '../hooks/usePortfolio'
 import { amountField, decimalPlacesProblem } from '../validation/amount'
 import { noteField, pastDateField } from '../validation/fields'
 
@@ -100,7 +103,7 @@ function RatesPreview({ side, rates }: { side: Side; rates: FxRates }) {
             市場參考匯率 {rates.market_rate}（{rates.market_rate_date}）
           </p>
           <p className="font-semibold">{spreadText(side, rates.spread)}</p>
-          <p className="text-xs text-muted-foreground">資料來源：中央銀行</p>
+          <RateSource />
         </>
       )}
     </section>
@@ -119,6 +122,7 @@ function FxForm({ currencies, trade }: FxFormProps) {
   const refreshAndShowMonth = (tradedOn: string) => {
     navigate(fxMonthPath(tradedOn))
     void queryClient.invalidateQueries({ queryKey: fxTradesKey })
+    void queryClient.invalidateQueries({ queryKey: portfolioKey })
   }
   const schema = tradeSchema(taipeiToday(), currencies)
   const { register, handleSubmit, control, setError, formState } = useForm<TradeValues>({
@@ -175,6 +179,7 @@ function FxForm({ currencies, trade }: FxFormProps) {
       />
       <Field id="fx-note" label="備註" autoComplete="off" error={errors.note?.message} {...register('note')} />
       {rates && <RatesPreview side={values.side} rates={rates} />}
+      <OpeningCutoffNotice date={values.traded_on} currencies={[values.currency, TWD]} />
       <Button type="submit" block disabled={mutation.isPending}>
         {mutation.isPending ? '儲存中…' : '儲存'}
       </Button>

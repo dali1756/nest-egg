@@ -74,7 +74,8 @@ test('credits the source of the market rates', async () => {
 
   renderApp('/fx')
 
-  expect(await screen.findByText('市場參考匯率資料來源：中央銀行')).toBeInTheDocument()
+  expect(await screen.findByText('資料來源：中央銀行')).toHaveClass('text-destructive-text')
+  expect(screen.queryByText(/市場參考匯率資料來源/)).not.toBeInTheDocument()
 })
 
 test('says when a trade has no market rate', async () => {

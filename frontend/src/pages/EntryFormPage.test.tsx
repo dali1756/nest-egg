@@ -1,9 +1,10 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test } from 'vitest'
 import { freezeTime } from '../test/clock'
 import { makeEntry } from '../test/entries'
 import { fakeBackend } from '../test/fakeBackend'
+import { makeUsdOpening, summaryRequests } from '../test/portfolio'
 import { renderApp } from '../test/renderApp'
 
 freezeTime('2026-10-23T04:00:00Z')
@@ -304,7 +305,7 @@ test('shows the market rate and its source for a foreign entry', async () => {
   renderApp('/entries/7')
 
   expect(await screen.findByText('市場參考匯率 32.508（2026-10-17）')).toBeInTheDocument()
-  expect(screen.getByText('資料來源：中央銀行')).toBeInTheDocument()
+  expect(screen.getByText('資料來源：中央銀行')).toHaveClass('text-destructive-text')
 })
 
 test('says when a foreign entry has no market rate', async () => {
@@ -374,4 +375,31 @@ describe('back-filling a day picked on the calendar', () => {
     expect(await screen.findByRole('heading', { level: 1, name: '修改紀錄' })).toBeInTheDocument()
     expect(await screen.findByLabelText('日期')).toHaveValue('2026-10-20')
   })
+})
+
+test('reloads the assets summary after saving an entry', async () => {
+  const backend = fakeBackend({ user: 'me@example.com' })
+  const { router } = renderApp('/assets')
+  await screen.findByText('還沒有任何紀錄')
+
+  await act(() => router.navigate('/entries/new'))
+  await fillAndSave({ category: '飲食' })
+  await waitFor(() => expect(router.state.location.pathname).toBe('/'))
+  await act(() => router.navigate('/assets'))
+
+  await waitFor(() => expect(summaryRequests(backend)).toBe(2))
+})
+
+test('warns only when the entry currency has an opening balance covering the date', async () => {
+  fakeBackend({ user: 'me@example.com', portfolio: { openings: [makeUsdOpening({ opened_on: '2026-10-23' })] } })
+  renderApp('/entries/new')
+  const user = userEvent.setup()
+
+  await screen.findByRole('radio', { name: '飲食' })
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  expect(screen.queryByText(/期初餘額設在/)).not.toBeInTheDocument()
+
+  await user.selectOptions(screen.getByLabelText('幣別'), 'USD')
+
+  expect(await screen.findByText('USD 期初餘額設在 2026-10-23，這天（含）以前的紀錄不會算進 USD 餘額')).toBeInTheDocument()
 })

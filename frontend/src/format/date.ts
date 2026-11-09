@@ -79,3 +79,7 @@ export function dayLabel(date: string): string {
   const [, m, d] = dateParts(date)
   return `${m}/${d}（${weekdays[utcDate(date).getUTCDay()]}）`
 }
+
+export function monthDay(date: string): string {
+  return date.slice(5).replace('-', '/')
+}

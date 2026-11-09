@@ -4,6 +4,7 @@ import Button from '../components/Button'
 import { buttonClassName } from '../components/buttonStyles'
 import MonthNav from '../components/MonthNav'
 import Notice from '../components/Notice'
+import RateSource from '../components/RateSource'
 import { dayLabel, groupByDay, monthOrCurrent } from '../format/date'
 import { directionLabel, receivedAndPaid, spreadText } from '../format/fx'
 import { useFxMonth } from '../hooks/useFx'
@@ -47,7 +48,7 @@ function TradeList({ data }: { data: FxMonth }) {
           </ul>
         </section>
       ))}
-      <p className="mt-6 text-xs text-muted-foreground">市場參考匯率資料來源：中央銀行</p>
+      <RateSource className="mt-6" />
     </>
   )
 }

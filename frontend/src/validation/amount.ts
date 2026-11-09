@@ -11,6 +11,14 @@ export function amountField() {
     .refine((amount) => /[1-9]/.test(amount), '請輸入大於 0 的金額')
 }
 
+export function optionalAmountField() {
+  return z.string().superRefine((amount, ctx) => {
+    if (amount === '') return
+    const problem = amountField().safeParse(amount).error?.issues[0].message
+    if (problem) ctx.addIssue({ code: 'custom', message: problem })
+  })
+}
+
 export function decimalPlacesProblem(amount: string, minorUnit: number | undefined): string | undefined {
   if (minorUnit === undefined || decimalPlaces(amount) <= minorUnit) return undefined
   return `金額最多 ${minorUnit} 位小數`

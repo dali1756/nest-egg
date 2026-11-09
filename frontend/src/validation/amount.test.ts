@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { amountField, decimalPlacesProblem } from './amount'
+import { amountField, decimalPlacesProblem, optionalAmountField } from './amount'
 
 describe('amountField', () => {
   test.each(['120', '32.5', '0.01'])('accepts %s', (amount) => {
@@ -28,5 +28,18 @@ describe('decimalPlacesProblem', () => {
 
   test('skips the check until the currency is known', () => {
     expect(decimalPlacesProblem('1.234', undefined)).toBeUndefined()
+  })
+})
+
+describe('optionalAmountField', () => {
+  test.each(['', '315000', '650.5'])('accepts %j', (amount) => {
+    expect(optionalAmountField().safeParse(amount).success).toBe(true)
+  })
+
+  test.each([
+    ['abc', '請輸入數字，例如 120 或 32.5'],
+    ['0', '請輸入大於 0 的金額'],
+  ])('rejects %j with the amount message', (amount, message) => {
+    expect(optionalAmountField().safeParse(amount).error?.issues[0].message).toBe(message)
   })
 })

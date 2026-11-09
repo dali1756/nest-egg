@@ -23,6 +23,7 @@ function BrandMark() {
 const sections = [
   { to: '/', label: '記帳', prefix: '/entries/' },
   { to: '/fx', label: '換匯', prefix: '/fx/' },
+  { to: '/assets', label: '資產', prefix: '/assets/' },
 ]
 
 const tabClass =

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest'
 import {
   dayLabel,
+  monthDay,
   fromCalendarDay,
   groupByDay,
   isDate,
@@ -111,4 +112,8 @@ describe('labels', () => {
     expect(dayLabel('2026-11-01')).toBe('11/1（日）')
     expect(dayLabel('2024-02-29')).toBe('2/29（四）')
   })
+})
+
+test('monthDay keeps the month and day of a date', () => {
+  expect(monthDay('2026-11-02')).toBe('11/02')
 })

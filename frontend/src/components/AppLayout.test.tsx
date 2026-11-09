@@ -170,6 +170,7 @@ describe('section tabs', () => {
     return {
       ledger: within(nav).getByRole('link', { name: '記帳' }),
       fx: within(nav).getByRole('link', { name: '換匯' }),
+      assets: within(nav).getByRole('link', { name: '資產' }),
     }
   }
 
@@ -193,13 +194,25 @@ describe('section tabs', () => {
     expect(ledger).not.toHaveAttribute('aria-current')
   })
 
+  test.each(['/assets', '/assets/opening-balances', '/assets/opening-balances/USD'])('marks 資產 as the current section on %s', async (path) => {
+    fakeBackend({ user: 'me@example.com' })
+    renderApp(path)
+
+    const { ledger, fx, assets } = await tabs()
+    expect(assets).toHaveAttribute('href', '/assets')
+    expect(assets).toHaveAttribute('aria-current', 'page')
+    expect(ledger).not.toHaveAttribute('aria-current')
+    expect(fx).not.toHaveAttribute('aria-current')
+  })
+
   test('marks no section on the status page', async () => {
     fakeBackend({ user: 'me@example.com' })
     renderApp('/status')
 
-    const { ledger, fx } = await tabs()
+    const { ledger, fx, assets } = await tabs()
     expect(ledger).not.toHaveAttribute('aria-current')
     expect(fx).not.toHaveAttribute('aria-current')
+    expect(assets).not.toHaveAttribute('aria-current')
   })
 
   test('switches to the fx page', async () => {
@@ -210,6 +223,18 @@ describe('section tabs', () => {
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/fx'))
     expect((await tabs()).fx).toHaveAttribute('aria-current', 'page')
+  })
+
+  test('switches to the assets page', async () => {
+    fakeBackend({ user: 'me@example.com' })
+    const { router } = renderApp('/')
+
+    await userEvent.setup().click((await tabs()).assets)
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/assets'))
+    const { ledger, assets } = await tabs()
+    expect(assets).toHaveAttribute('aria-current', 'page')
+    expect(ledger).not.toHaveAttribute('aria-current')
   })
 
   test('are hidden when logged out', async () => {

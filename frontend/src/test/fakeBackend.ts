@@ -3,6 +3,7 @@ import type { Currency } from '../api/currencies'
 import type { FxRates, FxTrade, FxTradeInput } from '../api/fx'
 import type { DecimalString } from '../api/http'
 import type { Category, Entry, EntryInput, Total } from '../api/ledger'
+import type { OpeningBalance, OpeningBalanceInput, OpeningCost, PortfolioSummary } from '../api/portfolio'
 
 type Call = { method: string; path: string; body?: Record<string, unknown> }
 
@@ -17,6 +18,7 @@ type Options = {
   changeStatus?: number
   ledger?: LedgerOptions
   fx?: FxOptions
+  portfolio?: PortfolioOptions
 }
 
 export type LedgerOptions = {
@@ -35,6 +37,18 @@ export type FxOptions = {
   saveFields?: Record<string, string>
   rates?: FxRates
   previewStatus?: number
+}
+
+export type PortfolioOptions = {
+  summary?: PortfolioSummary
+  summaryStatus?: number
+  summaryPending?: boolean
+  openings?: OpeningBalance[]
+  openingsStatus?: number
+  saveStatus?: number
+  saveFields?: Record<string, string>
+  preview?: OpeningCost
+  previewFields?: Record<string, string>
 }
 
 function json(status: number, body: unknown) {
@@ -186,11 +200,65 @@ function fakeFx(opts: FxOptions = {}) {
   return { handle }
 }
 
+const noOpeningCost: OpeningCost = { market_rate: null, market_rate_date: null, cost: null, average_cost: null }
+
+function fakePortfolio(opts: PortfolioOptions = {}) {
+  const openings = new Map((opts.openings ?? []).map((o) => [o.currency, o]))
+  const preview = opts.preview ?? noOpeningCost
+
+  function save(currency: string, input: OpeningBalanceInput): Response {
+    if (opts.saveStatus === 422) return json(422, { error: 'invalid input', fields: opts.saveFields ?? {} })
+    if (opts.saveStatus) return json(opts.saveStatus, { error: 'save failed' })
+    const status = openings.has(currency) ? 200 : 201
+    const opening: OpeningBalance = {
+      currency,
+      opened_on: input.opened_on,
+      amount: twoDecimals(input.amount),
+      twd_cost: input.twd_cost ? twoDecimals(input.twd_cost) : null,
+      ...(currency === 'TWD' ? noOpeningCost : preview),
+    }
+    openings.set(currency, opening)
+    return json(status, opening)
+  }
+
+  function handle(method: string, path: string, body: unknown): Response | Promise<Response> | undefined {
+    const url = new URL(path, 'http://localhost')
+    if (method === 'GET' && url.pathname === '/api/portfolio/summary') {
+      if (opts.summaryPending) return new Promise<Response>(() => {})
+      if (opts.summaryStatus) return json(opts.summaryStatus, { error: 'summary failed' })
+      return json(200, opts.summary ?? { cash: [] })
+    }
+    if (method === 'GET' && url.pathname === '/api/opening-balances') {
+      if (opts.openingsStatus) return json(opts.openingsStatus, { error: 'list failed' })
+      const list = [...openings.values()].sort((a, b) => a.currency.localeCompare(b.currency))
+      return json(200, { opening_balances: list })
+    }
+    if (method === 'GET' && url.pathname === '/api/opening-balances/preview') {
+      if (opts.previewFields) return json(422, { error: 'invalid input', fields: opts.previewFields })
+      return json(200, preview)
+    }
+    const match = url.pathname.match(/^\/api\/opening-balances\/([A-Z]{3})$/)
+    if (!match) return undefined
+    const currency = match[1]
+    if (method === 'PUT') return save(currency, body as OpeningBalanceInput)
+    if (!openings.has(currency)) return json(404, { error: 'not found' })
+    if (method === 'GET') return json(200, openings.get(currency))
+    if (method === 'DELETE') {
+      openings.delete(currency)
+      return empty(204)
+    }
+    return undefined
+  }
+
+  return { handle }
+}
+
 export function fakeBackend(opts: Options = {}) {
   const state = { user: opts.user ?? null }
   const calls: Call[] = []
   const ledger = fakeLedger(opts.ledger)
   const fx = fakeFx(opts.fx)
+  const portfolio = fakePortfolio(opts.portfolio)
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
@@ -198,7 +266,7 @@ export function fakeBackend(opts: Options = {}) {
     const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : undefined
     calls.push({ method, path, body })
 
-    const featureResponse = ledger.handle(method, path, body) ?? fx.handle(method, path, body)
+    const featureResponse = ledger.handle(method, path, body) ?? fx.handle(method, path, body) ?? portfolio.handle(method, path, body)
     if (featureResponse) return featureResponse
 
     switch (`${method} ${path}`) {

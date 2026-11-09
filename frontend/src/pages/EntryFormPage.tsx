@@ -21,13 +21,16 @@ import ChoiceGroup from '../components/ChoiceGroup'
 import ConfirmDeleteButton from '../components/ConfirmDeleteButton'
 import Field from '../components/Field'
 import Notice from '../components/Notice'
+import OpeningCutoffNotice from '../components/OpeningCutoffNotice'
 import PageMessage from '../components/PageMessage'
+import RateSource from '../components/RateSource'
 import SelectField from '../components/SelectField'
 import TextLink from '../components/TextLink'
 import { pickableDate, taipeiToday } from '../format/date'
 import { parsePathId } from '../format/id'
 import { clearUserIfUnauthorized } from '../hooks/useCurrentUser'
 import { ledgerEntriesKey, useLedgerEntry } from '../hooks/useLedger'
+import { portfolioKey } from '../hooks/usePortfolio'
 import { amountField, decimalPlacesProblem } from '../validation/amount'
 import { noteField, pastDateField } from '../validation/fields'
 
@@ -92,7 +95,7 @@ function MarketRateNote({ entry }: { entry: Entry }) {
       <p>
         市場參考匯率 {entry.market_rate}（{entry.market_rate_date}）
       </p>
-      <p>資料來源：中央銀行</p>
+      <RateSource />
     </div>
   )
 }
@@ -109,12 +112,13 @@ function EntryForm({ categories, currencies, entry, pickedDate }: EntryFormProps
   const refreshAndShowLedger = (occurredOn: string) => {
     navigate(ledgerPath(occurredOn, pickedDate !== undefined))
     void queryClient.invalidateQueries({ queryKey: ledgerEntriesKey })
+    void queryClient.invalidateQueries({ queryKey: portfolioKey })
   }
   const { register, handleSubmit, control, setValue, setError, formState } = useForm<EntryValues>({
     resolver: zodResolver(entrySchema(taipeiToday(), currencies)),
     defaultValues: defaultValuesFor(entry, pickedDate),
   })
-  const kind = useWatch({ control, name: 'kind' })
+  const [kind, occurredOn, currency] = useWatch({ control, name: ['kind', 'occurred_on', 'currency'] })
   const mutation = useMutation({
     mutationFn: (input: EntryInput) => (entry ? updateEntry(entry.id, input) : createEntry(input)),
     onSuccess: (saved) => refreshAndShowLedger(saved.occurred_on),
@@ -188,6 +192,7 @@ function EntryForm({ categories, currencies, entry, pickedDate }: EntryFormProps
       />
       <Field id="entry-note" label="備註" autoComplete="off" error={errors.note?.message} {...register('note')} />
       {entry && <MarketRateNote entry={entry} />}
+      <OpeningCutoffNotice date={occurredOn} currencies={[currency]} />
       <Button type="submit" block disabled={mutation.isPending}>
         {mutation.isPending ? '儲存中…' : '儲存'}
       </Button>

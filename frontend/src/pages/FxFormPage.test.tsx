@@ -1,10 +1,11 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, test } from 'vitest'
 import type { FxRates } from '../api/fx'
 import { freezeTime } from '../test/clock'
 import { fakeBackend } from '../test/fakeBackend'
 import { makeFxTrade } from '../test/fxTrades'
+import { makeUsdOpening, summaryRequests } from '../test/portfolio'
 import { renderApp } from '../test/renderApp'
 
 freezeTime('2026-10-28T02:00:00Z')
@@ -148,7 +149,7 @@ describe('previewing the rates', () => {
     const preview = await screen.findByRole('region', { name: '試算' })
     await waitFor(() => expect(preview).toHaveTextContent('成交匯率 32.42'))
     expect(preview).toHaveTextContent('市場參考匯率 32.3（2026-10-27）')
-    expect(preview).toHaveTextContent('資料來源：中央銀行')
+    expect(within(preview).getByText('資料來源：中央銀行')).toHaveClass('text-destructive-text')
     expect(preview).toHaveTextContent('比市場多付 120.00')
     expect(previewCalls(backend).at(-1)).toEqual({
       side: 'buy',
@@ -266,5 +267,55 @@ describe('changing a trade', () => {
 
     expect(await screen.findByText('找不到這筆換匯')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '回換匯頁' })).toHaveAttribute('href', '/fx')
+  })
+})
+
+describe('keeping the assets up to date', () => {
+  test('reloads the assets summary after saving a trade', async () => {
+    const backend = fakeBackend({ user: 'me@example.com', fx: { rates: marketRates } })
+    const { router } = renderApp('/assets')
+    await screen.findByText('還沒有任何紀錄')
+
+    await act(() => router.navigate('/fx/new'))
+    const user = await fillAmounts('1000', '32420')
+    await user.click(screen.getByRole('button', { name: '儲存' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/fx'))
+    await act(() => router.navigate('/assets'))
+
+    await waitFor(() => expect(summaryRequests(backend)).toBe(2))
+  })
+})
+
+describe('opening balance cut-off', () => {
+  const cutoffText = (currency: string, date: string) => `${currency} 期初餘額設在 ${date}，這天（含）以前的紀錄不會算進 ${currency} 餘額`
+
+  test('warns that a trade on the opening date is left out, but still saves it', async () => {
+    const backend = fakeBackend({ user: 'me@example.com', fx: { rates: marketRates }, portfolio: { openings: [makeUsdOpening({ opened_on: '2026-10-28' })] } })
+    const { router } = renderApp('/fx/new')
+
+    expect(await screen.findByText(cutoffText('USD', '2026-10-28'))).toBeInTheDocument()
+    const user = await fillAmounts('100', '3200')
+    await user.click(screen.getByRole('button', { name: '儲存' }))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/fx'))
+    expect(posted(backend)).toBeDefined()
+  })
+
+  test('says nothing for a trade after the opening date', async () => {
+    fakeBackend({ user: 'me@example.com', portfolio: { openings: [makeUsdOpening({ opened_on: '2026-10-27' })] } })
+    renderApp('/fx/new')
+
+    await screen.findByLabelText('換到的外幣')
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(screen.queryByText(/期初餘額設在/)).not.toBeInTheDocument()
+  })
+
+  test('warns about both currencies when TWD has an opening balance too', async () => {
+    const twdOpening = { ...makeUsdOpening({ opened_on: '2026-10-28' }), currency: 'TWD', twd_cost: null, market_rate: null, market_rate_date: null, cost: null, average_cost: null }
+    fakeBackend({ user: 'me@example.com', portfolio: { openings: [twdOpening, makeUsdOpening({ opened_on: '2026-10-28' })] } })
+    renderApp('/fx/new')
+
+    expect(await screen.findByText(cutoffText('TWD', '2026-10-28'))).toBeInTheDocument()
+    expect(screen.getByText(cutoffText('USD', '2026-10-28'))).toBeInTheDocument()
   })
 })
