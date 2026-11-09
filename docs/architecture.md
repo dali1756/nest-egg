@@ -24,7 +24,7 @@
 | 2 幣別與每日匯率 | `currencies`、央行收盤匯率（2008 年起的歷史）、每天更新存進 `rate_snapshots`、週末與假日往回找 | 沒有畫面；登入後開 `/api/rates?base=USD&quote=TWD` 看到最近一個營業日的匯率 |
 | 3 收支記帳 | 每個使用者的分類、收入與支出（TWD、USD，每筆一個幣別）、外幣帶入市場參考匯率 | 記帳頁成為登入後首頁：依月份列出紀錄與各幣別合計、記一筆、修改、刪除；月曆標出有紀錄的日子，點某一天只看那天的紀錄（`/?date=`），從那天按「記一筆」直接補登；系統狀態頁移到 `/status` |
 | 4-1 換匯紀錄 | 換匯交易（台幣與外幣雙向，記兩個金額，成交匯率由系統算）、市場參考匯率與差額；頁首加功能分頁 | 頁首「記帳｜換匯」分頁；換匯列表、記一筆、修改、刪除，記的時候看到成交匯率與比市場多付多少 |
-| 4-2 各幣別總額 | 從收支與換匯算出各幣別餘額；外幣的移動平均均價與未實現損益 | 台幣、美金各自的總額，美金的均價與損益 |
+| 4-2 各幣別總額 | 從期初餘額、收支與換匯算出各幣別餘額；外幣的移動平均均價與未實現損益 | 頁首「資產」分頁：台幣、美金各自的餘額，美金的均價、市值與損益；期初餘額 |
 | 4-3 每月成本 | 每月加權平均換匯成本（當月買進的台幣總額 ÷ 外幣總額） | 每月成本圖 |
 | 4-4 更多幣別 | 日圓、泰銖等幣別與新的匯率來源（央行只有美元）；出國用的換匯算支出；國外刷卡記外幣金額 | 收支與換匯都能選日圓、泰銖 |
 | 5 總覽 | 以當天匯率折合的台幣總額、本月各分類花費 | 總資產頁 |
@@ -138,7 +138,7 @@ nest-egg/
 - **測試：** 每個使用者資料 API 都有 A/B 隔離測試：A 建立的資料，B 的列表看不到；B 用 A 的 id 查、改、刪都得到 404，A 的資料不變。
 - **自動檢查：** `nest-egg-money-review` 的 `user-id-from-request` 規則抓「從請求讀 `user_id`」；查詢有沒有篩選要人工檢查（`references/judgement.md` 第 10 項）。
 
-`currencies`、`rate_snapshots` 已定案（第 2 步，`backend/db/migrations/00005`、`00006`）；`categories`、`ledger_entries` 在第 3 步定案（`00007`、`00008`）；`fx_trades` 在 4-1 定案（`00009`）。
+`currencies`、`rate_snapshots` 已定案（第 2 步，`backend/db/migrations/00005`、`00006`）；`categories`、`ledger_entries` 在第 3 步定案（`00007`、`00008`）；`fx_trades` 在 4-1 定案（`00009`）；`opening_balances` 在 4-2 定案（`00010`）。
 
 ```sql
 -- 幣別，所有使用者共用。新增幣別用新的 migration 插入資料。初始資料：TWD（新臺幣，2）、USD（美元，2）
@@ -193,6 +193,22 @@ CREATE TABLE fx_trades (
     CHECK ((market_rate IS NULL) = (market_rate_date IS NULL))
 );
 
+-- 期初餘額：開始使用前已經有的錢，每個使用者每個幣別最多一筆
+-- 外幣查不到 opened_on 的匯率時 twd_cost 必填；台幣不可以有 twd_cost、不存匯率。都由 service 檢查（設計規則 5）
+CREATE TABLE opening_balances (
+    id               BIGSERIAL     PRIMARY KEY,
+    user_id          BIGINT        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    currency         CHAR(3)       NOT NULL REFERENCES currencies(code),
+    opened_on        DATE          NOT NULL,  -- 台北日期；amount 是這天結束時的餘額，該幣別這天（含）以前的紀錄不算
+    amount           NUMERIC(20,4) NOT NULL CHECK (amount > 0),
+    twd_cost         NUMERIC(20,4) CHECK (twd_cost > 0),  -- 外幣才有，使用者填的總額；NULL 表示用 market_rate 換算
+    market_rate      NUMERIC(20,8),  -- opened_on 的市場參考匯率；只有 opened_on 改變才重新查
+    market_rate_date DATE,
+    created_at       TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    UNIQUE (user_id, currency),
+    CHECK ((market_rate IS NULL) = (market_rate_date IS NULL))
+);
+
 -- 每日市場參考匯率，所有使用者共用。只存來源真正公布的日子，週末與假日沒有資料列
 CREATE TABLE rate_snapshots (
     base       CHAR(3)       NOT NULL REFERENCES currencies(code),
@@ -242,9 +258,12 @@ ORDER BY month;
 
 外幣與股票的均價、未實現損益用移動平均，依日期與建立順序逐筆計算（CLAUDE.md 設計規則 7）：
 
-- 買進或外幣收入：成本 += 付出 + 手續費（外幣收入用 `market_rate` 換算），數量 += 取得。
+- 買進、外幣收入或期初餘額：成本 += 付出 + 手續費（外幣收入用 `market_rate` 換算；期初餘額用使用者填的台幣成本，沒填就用 `market_rate` 換算），數量 += 取得。
 - 賣出或提領：依當下均價扣成本，均價不變；賣出的已實現損益 = 拿到的台幣 − 均價 × 賣出數量（股票另外扣手續費與稅）。外幣提領沒有換回台幣，不算已實現損益。
 - 餘額可以是負數（例如沒記到買進就先記了賣出）。外幣數量為負的期間，均價與損益算不出來，回 `null`，不硬算。
+- 超賣後再流入：數量降到 0 以下時成本歸零。下一筆流入先補足負數的部分，剩下的數量依比例帶入那一筆的成本。
+- 期初日期當天與以前不計入：期初金額是期初日期那天結束時的餘額，已經包含那天以前的紀錄，所以該幣別在期初日期當天與以前的收支、換匯不算進餘額與成本。只看該幣別這一邊，換匯的另一個幣別照常計入。
+- 外幣收入沒有 `market_rate` 時成本不明：均價、成本、損益回 `null` 並指出是哪一筆，直到該外幣歸零。
 
 接續第 1 節的範例：9、10 月共買 2,000 美元、成本 64,520，均價 32.26。之後以 32.00 賣出 500 美元：
 
@@ -265,7 +284,7 @@ ORDER BY month;
 
 ### 之後的步驟（草稿）
 
-- **4-2 各幣別總額：** 現金餘額 = 收入 − 支出 ± 換匯 ± 股票買賣，依幣別分開；外幣的均價與損益用上面的移動平均。待討論：開始使用前已經存的錢（期初餘額）怎麼記進來。
+- **4-2 各幣別總額：** 現金餘額 = 期初餘額 + 收入 − 支出 ± 換匯，依幣別分開（第 6 步再加股票買賣）；外幣的均價與損益用上面的移動平均，市值用台北今天查到的市場參考匯率。開始使用前已經存的錢記成期初餘額（`opening_balances`），不借用收入或換匯，收入合計與台幣餘額才不會失真。刷卡的外幣消費照銀行通知的台幣金額記成台幣支出，原幣寫在備註；只有花掉手上的外幣才記外幣支出。
 - **4-3 每月成本：** 上面「每月加權平均換匯成本」的查詢與成本圖。
 - **4-4 更多幣別：** 新增日圓、泰銖等幣別與它們的匯率來源。出國用的換匯算支出（當地的現金消費不另外記，避免重複）；國外刷卡記外幣金額。待討論：刷卡的外幣消費不應該扣到外幣餘額（實際是以台幣扣款）。原第 7 步的構想：收支紀錄加上扣款幣別，原幣（例如 JPY 3,000）與實際扣款的幣別不同時，用當天市場匯率換算扣款金額，之後可以手動改成帳單金額；這和美股的台幣交割是同一個概念。
 - **第 5 步 總覽：** 以當天匯率折合的台幣總額、本月各分類花費。
@@ -301,7 +320,12 @@ JSON 中的金額與匯率一律用字串。
 | `GET /api/fx-trades/monthly-cost?currency=USD`                            | 每月加權平均成本                                                                                                                             | 4-3  |
 | `GET /api/rates?base=USD&quote=TWD&date=2026-10-17`                       | 某一天的市場參考匯率（第 5 節「週末與假日的匯率」），回傳 `rate`、`rate_date`、`source`；`date` 不填是台北的今天；查不到 404，幣別不存在、日期格式錯誤或在未來 422 | 2    |
 | `GET /api/rates/history?base=USD&quote=TWD&from=2026-01-01&to=2026-10-31` | 匯率歷史（走勢圖）                                                                                                                           | 之後 |
-| `GET /api/portfolio/summary`                                              | 成本、市值、未實現損益（4-2 先做現金，第 5 步加台幣總額，第 6、8、9 步加入股票、基金、黃金）                                                  | 4-2  |
+| `GET /api/portfolio/summary`                                              | 各幣別現金 `{"cash":[...]}`：餘額、均價、市值、未實現損益，算不出來時回 `null` 與 `unavailable_reason`（第 5 步加台幣總額，第 6、8、9 步加入股票、基金、黃金） | 4-2  |
+| `GET /api/opening-balances`                                               | 自己的期初餘額 `{"opening_balances":[...]}`，依幣別排序                                                                                    | 4-2  |
+| `GET /api/opening-balances/preview?currency=&opened_on=&amount=&twd_cost=` | 試算期初餘額的市場參考匯率、成本與均價，不寫入；規則和設定相同                                                                             | 4-2  |
+| `GET /api/opening-balances/{currency}`                                    | 某個幣別的期初餘額；沒設定或幣別不存在回 404                                                                                                 | 4-2  |
+| `PUT /api/opening-balances/{currency}`                                    | 設定期初餘額（`opened_on`、`amount`、選填 `twd_cost`）：沒有就新增回 201，有就取代回 200；只有日期改變才重新帶入市場參考匯率             | 4-2  |
+| `DELETE /api/opening-balances/{currency}`                                 | 刪除期初餘額，回 204；該幣別改從所有紀錄計算                                                                                                 | 4-2  |
 
 「階段」對應第 1 節「開發階段」的步驟。幣別與匯率是所有使用者共用的資料，仍然需要登入，回應不含 `user_id`。除了 health 與會員的公開路徑，所有 API 都需要登入，而且只回傳自己的資料（第 5 節「資料屬於使用者」）。錯誤回應格式見第 8 節。
 
