@@ -26,6 +26,7 @@ import (
 	"nest-egg/backend/internal/platform/config"
 	"nest-egg/backend/internal/platform/health"
 	"nest-egg/backend/internal/platform/ratelimit"
+	"nest-egg/backend/internal/portfolio"
 	"nest-egg/backend/internal/rate"
 )
 
@@ -75,6 +76,7 @@ func newTestHandlers(t *testing.T, cfg config.Config, limit func(http.Handler) h
 		rate:      rate.NewHandler(rate.NewService(fakeRateStore{}, nil, currencies)),
 		ledger:    ledger.NewHandler(ledger.NewService(emptyLedgerStore{}, currencies, fakeRateStore{})),
 		fx:        fx.NewHandler(fx.NewService(emptyFxStore{}, currencies, fakeRateStore{})),
+		portfolio: portfolio.NewHandler(portfolio.NewService(emptyPortfolioStore{}, currencies, fakeRateStore{})),
 		rateLimit: limit,
 	}
 }
@@ -476,6 +478,29 @@ func (emptyFxStore) Trades(context.Context, int64, time.Time, time.Time) ([]fx.T
 	return nil, nil
 }
 
+// emptyPortfolioStore 是沒有任何資料的 portfolio.Store，只用來確認路徑有接上 handler
+type emptyPortfolioStore struct{}
+
+func (emptyPortfolioStore) SetOpening(context.Context, int64, string, portfolio.OpeningValues) (bool, error) {
+	return false, apperr.ErrNotFound
+}
+
+func (emptyPortfolioStore) Opening(context.Context, int64, string) (portfolio.Opening, error) {
+	return portfolio.Opening{}, apperr.ErrNotFound
+}
+
+func (emptyPortfolioStore) Openings(context.Context, int64) ([]portfolio.Opening, error) {
+	return nil, nil
+}
+
+func (emptyPortfolioStore) DeleteOpening(context.Context, int64, string) error {
+	return apperr.ErrNotFound
+}
+
+func (emptyPortfolioStore) Movements(context.Context, int64) ([]portfolio.Movement, error) {
+	return nil, nil
+}
+
 type fakeRateStore struct{}
 
 func (fakeRateStore) Upsert(context.Context, string, []rate.Rate) (rate.UpsertResult, error) {
@@ -554,6 +579,12 @@ var apiRoutes = []struct {
 	{http.MethodGet, "/api/fx-trades/1", false},
 	{http.MethodPut, "/api/fx-trades/1", false},
 	{http.MethodDelete, "/api/fx-trades/1", false},
+	{http.MethodGet, "/api/portfolio/summary", false},
+	{http.MethodGet, "/api/opening-balances", false},
+	{http.MethodGet, "/api/opening-balances/preview?currency=USD&opened_on=2026-10-01&amount=10000", false},
+	{http.MethodGet, "/api/opening-balances/USD", false},
+	{http.MethodPut, "/api/opening-balances/USD", false},
+	{http.MethodDelete, "/api/opening-balances/USD", false},
 }
 
 func TestEveryRouteHasTheRightProtection(t *testing.T) {

@@ -52,6 +52,18 @@ type LedgerEntry struct {
 	CreatedAt      time.Time
 }
 
+type OpeningBalance struct {
+	ID             int64
+	UserID         int64
+	Currency       string
+	OpenedOn       time.Time
+	Amount         decimal.Decimal
+	TwdCost        *decimal.Decimal
+	MarketRate     *decimal.Decimal
+	MarketRateDate *time.Time
+	CreatedAt      time.Time
+}
+
 type PasswordResetToken struct {
 	ID        int64
 	TokenHash []byte
