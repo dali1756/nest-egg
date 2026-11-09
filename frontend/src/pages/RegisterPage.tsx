@@ -45,7 +45,7 @@ function RegisterPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: currentUserKey }),
   })
 
-  if (me.isPending) return <PageMessage>載入中…</PageMessage>
+  if (me.isPending) return <PageMessage>載入中...</PageMessage>
   if (me.data) return <Navigate to="/" replace />
 
   const { errors } = formState
@@ -83,7 +83,7 @@ function RegisterPage() {
           {...register('confirm_password')}
         />
         <Button type="submit" block disabled={mutation.isPending}>
-          {mutation.isPending ? '註冊中…' : '註冊'}
+          {mutation.isPending ? '註冊中...' : '註冊'}
         </Button>
       </form>
       <p className="mt-5 text-center text-sm text-muted-foreground">

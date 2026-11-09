@@ -119,6 +119,14 @@ test('suggests recording a trade in an empty month', async () => {
   expect(screen.getAllByRole('link', { name: '＋' })).toHaveLength(2)
 })
 
+test('says it is loading', async () => {
+  fakeBackend({ user: 'me@example.com', fx: { listPending: true } })
+  renderApp('/fx')
+
+  await screen.findByRole('heading', { level: 1, name: '換匯' })
+  expect(screen.getByText('載入中...')).toBeInTheDocument()
+})
+
 test('offers to reload when the list fails', async () => {
   const backend = fakeBackend({ user: 'me@example.com', fx: { listStatus: 500 } })
   renderApp('/fx')

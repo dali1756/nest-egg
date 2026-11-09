@@ -140,7 +140,7 @@ function OpeningForm({ currency, twd, opening }: OpeningFormProps) {
         </>
       )}
       <Button type="submit" block disabled={mutation.isPending}>
-        {mutation.isPending ? '儲存中…' : '儲存'}
+        {mutation.isPending ? '儲存中...' : '儲存'}
       </Button>
       {opening && (
         <ConfirmDeleteButton
@@ -188,7 +188,7 @@ function OpeningBalanceFormPage() {
           <OpeningForm currency={currency} twd={currencies.data?.find((c) => c.code === TWD)} opening={opening.data} />
         </>
       ) : (
-        <p className="mt-6 text-muted-foreground">載入中…</p>
+        <p className="mt-6 text-muted-foreground">載入中...</p>
       )}
     </main>
   )

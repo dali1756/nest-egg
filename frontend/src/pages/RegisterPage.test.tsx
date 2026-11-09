@@ -79,6 +79,23 @@ test.each([
   expect(router.state.location.pathname).toBe('/register')
 })
 
+test('disables the button while registering', async () => {
+  fakeBackend({ user: null, registerPending: true })
+  renderApp('/register')
+
+  await fillRegister('me@example.com', 'Passw0rd!', 'Passw0rd!')
+
+  expect(await screen.findByRole('button', { name: '註冊中...' })).toBeDisabled()
+})
+
+test('shows a loading message while checking the session', async () => {
+  fakeBackend({ mePending: true })
+  renderApp('/register')
+
+  await screen.findByRole('banner')
+  expect(screen.getByText('載入中...')).toBeInTheDocument()
+})
+
 test('links to the login page', async () => {
   fakeBackend({ user: null })
   renderApp('/register')

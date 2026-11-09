@@ -119,6 +119,14 @@ test('shows an empty state for a month without entries', async () => {
   for (const link of screen.getAllByRole('link', { name: '記一筆' })) expect(link).toHaveAttribute('href', '/entries/new')
 })
 
+test('says it is loading', async () => {
+  fakeBackend({ user: 'me@example.com', ledger: { listPending: true } })
+  renderApp('/')
+
+  await screen.findByRole('heading', { level: 1, name: '記帳' })
+  expect(screen.getByText('載入中...')).toBeInTheDocument()
+})
+
 test('shows an error and a way to retry when loading fails', async () => {
   const backend = fakeBackend({ user: 'me@example.com', ledger: { listStatus: 500 } })
   renderApp('/')

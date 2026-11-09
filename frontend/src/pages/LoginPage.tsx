@@ -39,7 +39,7 @@ function LoginPage() {
     onError: () => setValue('password', ''),
   })
 
-  if (me.isPending) return <PageMessage>載入中…</PageMessage>
+  if (me.isPending) return <PageMessage>載入中...</PageMessage>
   if (me.data) return <Navigate to="/" replace />
 
   const { errors } = formState
@@ -71,7 +71,7 @@ function LoginPage() {
           忘記密碼？
         </TextLink>
         <Button type="submit" block disabled={mutation.isPending}>
-          {mutation.isPending ? '登入中…' : '登入'}
+          {mutation.isPending ? '登入中...' : '登入'}
         </Button>
       </form>
       <p className="mt-5 text-center text-sm text-muted-foreground">

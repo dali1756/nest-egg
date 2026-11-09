@@ -108,7 +108,7 @@ function AssetsPage() {
   return (
     <main className="mx-auto max-w-170 px-5 pb-16">
       <h1 className="mt-12 text-3xl font-bold tracking-[-0.02em] text-heading">資產</h1>
-      {query.isPending && <p className="mt-6 text-muted-foreground">載入中…</p>}
+      {query.isPending && <p className="mt-6 text-muted-foreground">載入中...</p>}
       {query.isError && (
         <div className="mt-6 flex flex-col items-start gap-3">
           <Notice tone="error">無法載入資產，請稍後再試。</Notice>

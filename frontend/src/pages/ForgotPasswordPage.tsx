@@ -54,7 +54,7 @@ function ForgotPasswordPage() {
             {...register('email')}
           />
           <Button type="submit" block disabled={mutation.isPending}>
-            {mutation.isPending ? '送出中…' : '寄出重設連結'}
+            {mutation.isPending ? '送出中...' : '寄出重設連結'}
           </Button>
         </form>
       )}

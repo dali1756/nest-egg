@@ -44,6 +44,15 @@ test('does not submit an invalid email', async () => {
   expect(backend.called('POST', '/api/auth/password/forgot')).toBe(false)
 })
 
+test('disables the button while sending', async () => {
+  fakeBackend({ user: null, forgotPending: true })
+  renderApp('/forgot-password')
+
+  await submitEmail('me@example.com')
+
+  expect(await screen.findByRole('button', { name: '送出中...' })).toBeDisabled()
+})
+
 test('links back to the login page', async () => {
   fakeBackend({ user: null })
   renderApp('/forgot-password')

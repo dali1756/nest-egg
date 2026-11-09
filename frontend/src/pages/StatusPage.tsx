@@ -76,7 +76,7 @@ function StatusPage() {
         <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
           <h2 className="text-base font-semibold text-heading">連線檢查</h2>
           <Button type="button" onClick={recheck} disabled={checking}>
-            {checking ? '檢查中…' : '重新檢查'}
+            {checking ? '檢查中...' : '重新檢查'}
           </Button>
         </div>
         <ul className="divide-y divide-border" aria-live="polite">

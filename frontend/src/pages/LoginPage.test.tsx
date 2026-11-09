@@ -54,7 +54,15 @@ test('disables the button while logging in', async () => {
 
   await fillLogin('me@example.com', 'Passw0rd!')
 
-  expect(await screen.findByRole('button', { name: '登入中…' })).toBeDisabled()
+  expect(await screen.findByRole('button', { name: '登入中...' })).toBeDisabled()
+})
+
+test('shows a loading message while checking the session', async () => {
+  fakeBackend({ mePending: true })
+  renderApp('/login')
+
+  await screen.findByRole('banner')
+  expect(screen.getByText('載入中...')).toBeInTheDocument()
 })
 
 test('redirects to / when already logged in', async () => {

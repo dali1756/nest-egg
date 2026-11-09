@@ -89,6 +89,14 @@ test('switching between expense and income shows that kind of categories and cle
   expect(screen.getByRole('radio', { name: '飲食' })).not.toBeChecked()
 })
 
+test('says it is loading', async () => {
+  fakeBackend({ user: 'me@example.com', currenciesPending: true })
+  renderApp('/entries/new')
+
+  await screen.findByRole('heading', { level: 1, name: '記一筆' })
+  expect(screen.getByText('載入中...')).toBeInTheDocument()
+})
+
 test('sends a single request while saving', async () => {
   const backend = fakeBackend({ user: 'me@example.com', ledger: { savePending: true } })
   renderApp('/entries/new')
@@ -97,7 +105,7 @@ test('sends a single request while saving', async () => {
   await user.click(await screen.findByRole('radio', { name: '飲食' }))
   await user.type(screen.getByLabelText('金額'), '120')
   await user.click(screen.getByRole('button', { name: '儲存' }))
-  const saving = await screen.findByRole('button', { name: '儲存中…' })
+  const saving = await screen.findByRole('button', { name: '儲存中...' })
   await user.click(saving)
 
   expect(saving).toBeDisabled()

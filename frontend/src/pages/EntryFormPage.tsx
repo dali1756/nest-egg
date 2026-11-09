@@ -194,7 +194,7 @@ function EntryForm({ categories, currencies, entry, pickedDate }: EntryFormProps
       {entry && <MarketRateNote entry={entry} />}
       <OpeningCutoffNotice date={occurredOn} currencies={[currency]} />
       <Button type="submit" block disabled={mutation.isPending}>
-        {mutation.isPending ? '儲存中…' : '儲存'}
+        {mutation.isPending ? '儲存中...' : '儲存'}
       </Button>
       {entry && (
         <ConfirmDeleteButton
@@ -238,7 +238,7 @@ function EntryFormPage() {
       {ready ? (
         <EntryForm categories={categories.data} currencies={currencies.data} entry={entry.data} pickedDate={pickedDate} />
       ) : (
-        <p className="mt-6 text-muted-foreground">載入中…</p>
+        <p className="mt-6 text-muted-foreground">載入中...</p>
       )}
     </main>
   )

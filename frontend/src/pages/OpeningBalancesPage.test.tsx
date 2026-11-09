@@ -65,6 +65,14 @@ test.each([
   await waitFor(() => expect(router.state.location.pathname).toBe('/assets/opening-balances/USD'))
 })
 
+test('says it is loading', async () => {
+  fakeBackend({ user: 'me@example.com', currenciesPending: true })
+  renderApp('/assets/opening-balances')
+
+  await screen.findByRole('heading', { level: 1, name: '期初餘額' })
+  expect(screen.getByText('載入中...')).toBeInTheDocument()
+})
+
 test('offers to reload when the opening balances fail', async () => {
   fakeBackend({ user: 'me@example.com', portfolio: { openingsStatus: 500 } })
   renderApp('/assets/opening-balances')

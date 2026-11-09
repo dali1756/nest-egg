@@ -10,11 +10,15 @@ type Call = { method: string; path: string; body?: Record<string, unknown> }
 type Options = {
   user?: string | null
   mePending?: boolean
+  currenciesPending?: boolean
   loginStatus?: number
   loginPending?: boolean
   registerStatus?: number
+  registerPending?: boolean
   forgotStatus?: number
+  forgotPending?: boolean
   resetStatus?: number
+  resetPending?: boolean
   changeStatus?: number
   ledger?: LedgerOptions
   fx?: FxOptions
@@ -25,6 +29,7 @@ export type LedgerOptions = {
   entries?: Entry[]
   totals?: Record<string, Total[]>
   listStatus?: number
+  listPending?: boolean
   saveStatus?: number
   saveFields?: Record<string, string>
   savePending?: boolean
@@ -33,8 +38,10 @@ export type LedgerOptions = {
 export type FxOptions = {
   trades?: FxTrade[]
   listStatus?: number
+  listPending?: boolean
   saveStatus?: number
   saveFields?: Record<string, string>
+  savePending?: boolean
   rates?: FxRates
   previewStatus?: number
 }
@@ -47,6 +54,7 @@ export type PortfolioOptions = {
   openingsStatus?: number
   saveStatus?: number
   saveFields?: Record<string, string>
+  savePending?: boolean
   preview?: OpeningCost
   previewFields?: Record<string, string>
 }
@@ -60,6 +68,10 @@ function json(status: number, body: unknown) {
 
 function empty(status: number) {
   return new Response(null, { status })
+}
+
+function neverResponds() {
+  return new Promise<Response>(() => {})
 }
 
 const categories: Category[] = [
@@ -108,7 +120,7 @@ function fakeLedger(opts: LedgerOptions = {}) {
   }
 
   function save(id: number, input: EntryInput, status: number): Response | Promise<Response> {
-    if (opts.savePending) return new Promise<Response>(() => {})
+    if (opts.savePending) return neverResponds()
     const failStatus = opts.saveStatus
     if (failStatus === 422) return json(422, { error: 'invalid input', fields: opts.saveFields ?? {} })
     if (failStatus) return json(failStatus, { error: 'save failed' })
@@ -120,9 +132,9 @@ function fakeLedger(opts: LedgerOptions = {}) {
   function handle(method: string, path: string, body: unknown): Response | Promise<Response> | undefined {
     const url = new URL(path, 'http://localhost')
     if (method === 'GET' && url.pathname === '/api/categories') return json(200, { categories })
-    if (method === 'GET' && url.pathname === '/api/currencies') return json(200, { currencies })
     if (url.pathname === '/api/ledger-entries') {
       if (method === 'POST') return save(nextId++, body as EntryInput, 201)
+      if (opts.listPending) return neverResponds()
       if (opts.listStatus) return json(opts.listStatus, { error: 'list failed' })
       const month = url.searchParams.get('month') ?? ''
       const list = [...entries.values()].filter((e) => e.occurred_on.startsWith(month)).sort(byNewest)
@@ -157,7 +169,8 @@ function fakeFx(opts: FxOptions = {}) {
   let nextId = Math.max(0, ...trades.keys()) + 1
   const rates = opts.rates ?? noMarketRate
 
-  function save(id: number, input: FxTradeInput, status: number): Response {
+  function save(id: number, input: FxTradeInput, status: number): Response | Promise<Response> {
+    if (opts.savePending) return neverResponds()
     if (opts.saveStatus === 422) return json(422, { error: 'invalid input', fields: opts.saveFields ?? {} })
     if (opts.saveStatus) return json(opts.saveStatus, { error: 'save failed' })
     const trade: FxTrade = {
@@ -171,10 +184,11 @@ function fakeFx(opts: FxOptions = {}) {
     return json(status, trade)
   }
 
-  function handle(method: string, path: string, body: unknown): Response | undefined {
+  function handle(method: string, path: string, body: unknown): Response | Promise<Response> | undefined {
     const url = new URL(path, 'http://localhost')
     if (url.pathname === '/api/fx-trades') {
       if (method === 'POST') return save(nextId++, body as FxTradeInput, 201)
+      if (opts.listPending) return neverResponds()
       if (opts.listStatus) return json(opts.listStatus, { error: 'list failed' })
       const month = url.searchParams.get('month') ?? ''
       const list = [...trades.values()].filter((t) => t.traded_on.startsWith(month)).sort(byNewestTrade)
@@ -206,7 +220,8 @@ function fakePortfolio(opts: PortfolioOptions = {}) {
   const openings = new Map((opts.openings ?? []).map((o) => [o.currency, o]))
   const preview = opts.preview ?? noOpeningCost
 
-  function save(currency: string, input: OpeningBalanceInput): Response {
+  function save(currency: string, input: OpeningBalanceInput): Response | Promise<Response> {
+    if (opts.savePending) return neverResponds()
     if (opts.saveStatus === 422) return json(422, { error: 'invalid input', fields: opts.saveFields ?? {} })
     if (opts.saveStatus) return json(opts.saveStatus, { error: 'save failed' })
     const status = openings.has(currency) ? 200 : 201
@@ -224,7 +239,7 @@ function fakePortfolio(opts: PortfolioOptions = {}) {
   function handle(method: string, path: string, body: unknown): Response | Promise<Response> | undefined {
     const url = new URL(path, 'http://localhost')
     if (method === 'GET' && url.pathname === '/api/portfolio/summary') {
-      if (opts.summaryPending) return new Promise<Response>(() => {})
+      if (opts.summaryPending) return neverResponds()
       if (opts.summaryStatus) return json(opts.summaryStatus, { error: 'summary failed' })
       return json(200, opts.summary ?? { cash: [] })
     }
@@ -271,18 +286,21 @@ export function fakeBackend(opts: Options = {}) {
 
     switch (`${method} ${path}`) {
       case 'GET /api/auth/me':
-        if (opts.mePending) return new Promise<Response>(() => {})
+        if (opts.mePending) return neverResponds()
         return state.user ? json(200, { email: state.user }) : json(401, { error: 'unauthorized' })
+      case 'GET /api/currencies':
+        return opts.currenciesPending ? neverResponds() : json(200, { currencies })
       case 'GET /api/health':
         return json(200, { status: 'ok', database: 'up' })
       case 'POST /api/auth/login': {
-        if (opts.loginPending) return new Promise<Response>(() => {})
+        if (opts.loginPending) return neverResponds()
         const status = opts.loginStatus ?? 200
         if (status !== 200) return json(status, { error: 'login failed' })
         state.user = String(body!.email).trim().toLowerCase()
         return json(200, { email: state.user })
       }
       case 'POST /api/auth/register': {
+        if (opts.registerPending) return neverResponds()
         const status = opts.registerStatus ?? 201
         if (status !== 201) return json(status, { error: 'register failed' })
         state.user = String(body!.email).trim().toLowerCase()
@@ -292,10 +310,12 @@ export function fakeBackend(opts: Options = {}) {
         state.user = null
         return empty(204)
       case 'POST /api/auth/password/forgot': {
+        if (opts.forgotPending) return neverResponds()
         const status = opts.forgotStatus ?? 202
         return status === 202 ? empty(202) : json(status, { error: 'forgot failed' })
       }
       case 'POST /api/auth/password/reset': {
+        if (opts.resetPending) return neverResponds()
         const status = opts.resetStatus ?? 204
         if (status !== 204) return json(status, { error: 'reset failed' })
         state.user = null

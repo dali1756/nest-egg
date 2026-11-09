@@ -174,7 +174,7 @@ function LedgerPage() {
         onMonthChange={goToMonth}
       />
 
-      {query.isPending && <p className="mt-6 text-muted-foreground">載入中…</p>}
+      {query.isPending && <p className="mt-6 text-muted-foreground">載入中...</p>}
       {query.isError && (
         <div className="mt-6 flex flex-col items-start gap-3">
           <Notice tone="error">無法載入紀錄，請稍後再試。</Notice>

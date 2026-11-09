@@ -46,6 +46,14 @@ describe('recording a trade', () => {
     expect(screen.queryByLabelText(/手續費/)).not.toBeInTheDocument()
   })
 
+  test('says it is loading', async () => {
+    fakeBackend({ user: 'me@example.com', currenciesPending: true })
+    renderApp('/fx/new')
+
+    await screen.findByRole('heading', { level: 1, name: '＋' })
+    expect(screen.getByText('載入中...')).toBeInTheDocument()
+  })
+
   test('relabels the amounts when selling foreign currency', async () => {
     fakeBackend({ user: 'me@example.com' })
     renderApp('/fx/new')
@@ -75,6 +83,16 @@ describe('recording a trade', () => {
       note: '10 月定期換匯',
     })
     expect(await screen.findByText('10 月定期換匯')).toBeInTheDocument()
+  })
+
+  test('disables the button while saving', async () => {
+    fakeBackend({ user: 'me@example.com', fx: { savePending: true } })
+    renderApp('/fx/new')
+
+    const user = await fillAmounts('1000', '32420')
+    await user.click(screen.getByRole('button', { name: '儲存' }))
+
+    expect(await screen.findByRole('button', { name: '儲存中...' })).toBeDisabled()
   })
 
   test('returns to the month of an earlier trade', async () => {

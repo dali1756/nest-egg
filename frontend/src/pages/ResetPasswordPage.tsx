@@ -112,7 +112,7 @@ function ResetPasswordPage() {
           {...register('confirm_password')}
         />
         <Button type="submit" block disabled={mutation.isPending}>
-          {mutation.isPending ? '重設中…' : '重設密碼'}
+          {mutation.isPending ? '重設中...' : '重設密碼'}
         </Button>
       </form>
     </AuthCard>

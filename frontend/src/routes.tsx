@@ -13,7 +13,7 @@ export const routes: RouteObject[] = [
   {
     path: '/',
     Component: AppLayout,
-    HydrateFallback: () => <PageMessage>載入中…</PageMessage>,
+    HydrateFallback: () => <PageMessage>載入中...</PageMessage>,
     children: [
       { path: 'login', lazy: lazyPage(() => import('./pages/LoginPage')) },
       { path: 'register', lazy: lazyPage(() => import('./pages/RegisterPage')) },

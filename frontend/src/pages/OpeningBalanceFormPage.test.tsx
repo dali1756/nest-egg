@@ -32,6 +32,14 @@ function previewQueries(backend: ReturnType<typeof fakeBackend>) {
     .map((c) => Object.fromEntries(new URL(c.path, 'http://localhost').searchParams))
 }
 
+test('says it is loading', async () => {
+  fakeBackend({ user: 'me@example.com', currenciesPending: true })
+  renderApp('/assets/opening-balances/USD')
+
+  await screen.findByRole('link', { name: '‹ 期初餘額' })
+  expect(screen.getByText('載入中...')).toBeInTheDocument()
+})
+
 describe('fields', () => {
   test('a foreign currency has a date, an amount and an optional TWD cost', async () => {
     openForm('USD')
@@ -109,6 +117,15 @@ describe('saving', () => {
       body: { opened_on: '2026-10-01', amount: '10000', twd_cost: '' },
     })
     expect(within(await screen.findByRole('link', { name: /USD 美元/ })).getByText('10,000.00')).toBeInTheDocument()
+  })
+
+  test('disables the button while saving', async () => {
+    openForm('TWD', { savePending: true })
+
+    const user = await fill({ amount: '1000' })
+    await user.click(screen.getByRole('button', { name: '儲存' }))
+
+    expect(await screen.findByRole('button', { name: '儲存中...' })).toBeDisabled()
   })
 
   test('shows the field the server rejected', async () => {

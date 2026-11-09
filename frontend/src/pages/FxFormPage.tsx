@@ -181,7 +181,7 @@ function FxForm({ currencies, trade }: FxFormProps) {
       {rates && <RatesPreview side={values.side} rates={rates} />}
       <OpeningCutoffNotice date={values.traded_on} currencies={[values.currency, TWD]} />
       <Button type="submit" block disabled={mutation.isPending}>
-        {mutation.isPending ? '儲存中…' : '儲存'}
+        {mutation.isPending ? '儲存中...' : '儲存'}
       </Button>
       {trade && (
         <ConfirmDeleteButton
@@ -219,7 +219,7 @@ function FxFormPage() {
   return (
     <main className="mx-auto max-w-120 px-5 pb-16">
       <h1 className="mt-12 text-3xl font-bold tracking-[-0.02em] text-heading">{editing ? '修改換匯' : '＋'}</h1>
-      {ready ? <FxForm currencies={currencies.data} trade={trade.data} /> : <p className="mt-6 text-muted-foreground">載入中…</p>}
+      {ready ? <FxForm currencies={currencies.data} trade={trade.data} /> : <p className="mt-6 text-muted-foreground">載入中...</p>}
     </main>
   )
 }

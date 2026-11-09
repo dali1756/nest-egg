@@ -47,7 +47,8 @@ test('shows a loading message while checking the session', async () => {
 
   renderApp('/')
 
-  expect(await screen.findByText('載入中...')).toBeInTheDocument()
+  await screen.findByRole('banner')
+  expect(screen.getByText('載入中...')).toBeInTheDocument()
   expect(screen.queryByRole('heading', { name: '記帳' })).not.toBeInTheDocument()
   expect(screen.queryByRole('heading', { name: '登入' })).not.toBeInTheDocument()
   expect(loadedLedger(backend)).toBe(false)

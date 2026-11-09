@@ -138,7 +138,7 @@ test('says it is loading', async () => {
   renderApp('/assets')
 
   await screen.findByRole('heading', { level: 1, name: '資產' })
-  expect(screen.getByText('載入中…')).toBeInTheDocument()
+  expect(screen.getByText('載入中...')).toBeInTheDocument()
 })
 
 test('offers to reload when the summary fails', async () => {

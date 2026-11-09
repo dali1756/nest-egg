@@ -14,3 +14,12 @@ test('shows backend and database rows from /api/health', async () => {
   expect(within(list).getByText('資料庫')).toBeInTheDocument()
   expect(await screen.findByRole('button', { name: '重新檢查' })).toBeEnabled()
 })
+
+test('disables the button while checking', async () => {
+  fakeBackend({ user: 'me@example.com' })
+
+  render(<StatusPage />)
+
+  expect(screen.getByRole('button', { name: '檢查中...' })).toBeDisabled()
+  expect(await screen.findByRole('button', { name: '重新檢查' })).toBeEnabled()
+})

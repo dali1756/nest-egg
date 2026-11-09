@@ -64,6 +64,15 @@ test.each([
   expect(await screen.findByRole('alert')).toHaveTextContent(message)
 })
 
+test('disables the button while resetting', async () => {
+  fakeBackend({ user: null, resetPending: true })
+  renderApp('/reset-password#token=ABC234')
+
+  await fillReset('N3w-password', 'N3w-password')
+
+  expect(await screen.findByRole('button', { name: '重設中...' })).toBeDisabled()
+})
+
 test('asks for a new link when the token is missing', async () => {
   fakeBackend({ user: null })
   renderApp('/reset-password')
