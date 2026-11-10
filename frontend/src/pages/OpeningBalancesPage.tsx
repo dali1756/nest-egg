@@ -3,6 +3,7 @@ import { Link } from 'react-router'
 import { getCurrencies, type Currency } from '../api/currencies'
 import type { OpeningBalance } from '../api/portfolio'
 import Button from '../components/Button'
+import LoadingMessage from '../components/LoadingMessage'
 import Notice from '../components/Notice'
 import TextLink from '../components/TextLink'
 import { formatAmount } from '../format/money'
@@ -59,7 +60,7 @@ function OpeningBalancesPage() {
       <h1 className="mt-4 text-3xl font-bold tracking-[-0.02em] text-heading">期初餘額</h1>
       <p className="mt-2 text-muted-foreground">開始用 nest-egg 前手上已經有的錢，每個幣別一筆。</p>
 
-      {(currencies.isPending || openings.isPending) && <p className="mt-6 text-muted-foreground">載入中...</p>}
+      {(currencies.isPending || openings.isPending) && <LoadingMessage />}
       {(currencies.isError || openings.isError) && (
         <div className="mt-6 flex flex-col items-start gap-3">
           <Notice tone="error">無法載入期初餘額，請稍後再試。</Notice>

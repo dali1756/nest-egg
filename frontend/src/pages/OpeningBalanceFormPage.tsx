@@ -9,6 +9,7 @@ import { deleteOpeningBalance, putOpeningBalance, type OpeningBalance, type Open
 import Button from '../components/Button'
 import ConfirmDeleteButton from '../components/ConfirmDeleteButton'
 import Field from '../components/Field'
+import LoadingMessage from '../components/LoadingMessage'
 import Notice from '../components/Notice'
 import PageMessage from '../components/PageMessage'
 import RateSource from '../components/RateSource'
@@ -188,7 +189,7 @@ function OpeningBalanceFormPage() {
           <OpeningForm currency={currency} twd={currencies.data?.find((c) => c.code === TWD)} opening={opening.data} />
         </>
       ) : (
-        <p className="mt-6 text-muted-foreground">載入中...</p>
+        <LoadingMessage />
       )}
     </main>
   )

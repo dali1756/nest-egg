@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react'
 import type { RouteObject } from 'react-router'
 import AppLayout from './components/AppLayout'
+import { loadingText } from './components/LoadingMessage'
 import PageMessage from './components/PageMessage'
 import RequireAuth from './components/RequireAuth'
 
@@ -13,7 +14,7 @@ export const routes: RouteObject[] = [
   {
     path: '/',
     Component: AppLayout,
-    HydrateFallback: () => <PageMessage>載入中...</PageMessage>,
+    HydrateFallback: () => <PageMessage>{loadingText}</PageMessage>,
     children: [
       { path: 'login', lazy: lazyPage(() => import('./pages/LoginPage')) },
       { path: 'register', lazy: lazyPage(() => import('./pages/RegisterPage')) },

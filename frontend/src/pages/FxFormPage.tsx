@@ -11,6 +11,7 @@ import Button from '../components/Button'
 import ChoiceGroup from '../components/ChoiceGroup'
 import ConfirmDeleteButton from '../components/ConfirmDeleteButton'
 import Field from '../components/Field'
+import LoadingMessage from '../components/LoadingMessage'
 import Notice from '../components/Notice'
 import OpeningCutoffNotice from '../components/OpeningCutoffNotice'
 import PageMessage from '../components/PageMessage'
@@ -219,7 +220,7 @@ function FxFormPage() {
   return (
     <main className="mx-auto max-w-120 px-5 pb-16">
       <h1 className="mt-12 text-3xl font-bold tracking-[-0.02em] text-heading">{editing ? '修改換匯' : '＋'}</h1>
-      {ready ? <FxForm currencies={currencies.data} trade={trade.data} /> : <p className="mt-6 text-muted-foreground">載入中...</p>}
+      {ready ? <FxForm currencies={currencies.data} trade={trade.data} /> : <LoadingMessage />}
     </main>
   )
 }

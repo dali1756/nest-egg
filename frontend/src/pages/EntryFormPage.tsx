@@ -20,6 +20,7 @@ import Button from '../components/Button'
 import ChoiceGroup from '../components/ChoiceGroup'
 import ConfirmDeleteButton from '../components/ConfirmDeleteButton'
 import Field from '../components/Field'
+import LoadingMessage from '../components/LoadingMessage'
 import Notice from '../components/Notice'
 import OpeningCutoffNotice from '../components/OpeningCutoffNotice'
 import PageMessage from '../components/PageMessage'
@@ -238,7 +239,7 @@ function EntryFormPage() {
       {ready ? (
         <EntryForm categories={categories.data} currencies={currencies.data} entry={entry.data} pickedDate={pickedDate} />
       ) : (
-        <p className="mt-6 text-muted-foreground">載入中...</p>
+        <LoadingMessage />
       )}
     </main>
   )

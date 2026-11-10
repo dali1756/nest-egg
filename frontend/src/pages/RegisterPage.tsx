@@ -7,6 +7,7 @@ import { ApiError, register as registerUser } from '../api/auth'
 import AuthCard from '../components/AuthCard'
 import Button from '../components/Button'
 import Field from '../components/Field'
+import { loadingText } from '../components/LoadingMessage'
 import Notice from '../components/Notice'
 import PageMessage from '../components/PageMessage'
 import TextLink from '../components/TextLink'
@@ -45,7 +46,7 @@ function RegisterPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: currentUserKey }),
   })
 
-  if (me.isPending) return <PageMessage>載入中...</PageMessage>
+  if (me.isPending) return <PageMessage>{loadingText}</PageMessage>
   if (me.data) return <Navigate to="/" replace />
 
   const { errors } = formState

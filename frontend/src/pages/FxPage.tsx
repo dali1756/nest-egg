@@ -2,6 +2,7 @@ import { Link, useSearchParams } from 'react-router'
 import type { FxMonth, FxTrade } from '../api/fx'
 import Button from '../components/Button'
 import { buttonClassName } from '../components/buttonStyles'
+import LoadingMessage from '../components/LoadingMessage'
 import MonthNav from '../components/MonthNav'
 import Notice from '../components/Notice'
 import RateSource from '../components/RateSource'
@@ -72,7 +73,7 @@ function FxPage() {
       </div>
       <MonthNav month={month} onChange={(next) => setSearchParams({ month: next })} />
 
-      {query.isPending && <p className="mt-6 text-muted-foreground">載入中...</p>}
+      {query.isPending && <LoadingMessage />}
       {query.isError && (
         <div className="mt-6 flex flex-col items-start gap-3">
           <Notice tone="error">無法載入換匯紀錄，請稍後再試。</Notice>
