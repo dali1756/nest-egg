@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router'
 import type { Entry, MonthLedger, Total } from '../api/ledger'
 import Button from '../components/Button'
 import { buttonClassName } from '../components/buttonStyles'
+import { listRowLinkClassName } from '../components/listStyles'
 import LoadingMessage from '../components/LoadingMessage'
 import MonthCalendar from '../components/MonthCalendar'
 import MonthNav from '../components/MonthNav'
@@ -56,7 +57,7 @@ function EntryItems({ entries }: { entries: Entry[] }) {
         <li key={entry.id}>
           <Link
             to={`/entries/${entry.id}`}
-            className="flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-brand-soft focus-visible:outline-3 focus-visible:outline-offset-1 focus-visible:outline-ring"
+            className={listRowLinkClassName}
           >
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="font-semibold text-heading">{entry.category.name}</span>

@@ -1,10 +1,10 @@
-import Button from './Button'
+import SubmitButton from './SubmitButton'
 
 function SaveButton({ pending }: { pending: boolean }) {
   return (
-    <Button type="submit" block disabled={pending}>
-      {pending ? '儲存中...' : '儲存'}
-    </Button>
+    <SubmitButton pending={pending} pendingLabel="儲存中...">
+      儲存
+    </SubmitButton>
   )
 }
 

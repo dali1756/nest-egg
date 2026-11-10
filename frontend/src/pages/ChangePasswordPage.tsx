@@ -4,9 +4,9 @@ import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { ApiError, changePassword } from '../api/auth'
 import AuthCard from '../components/AuthCard'
-import Button from '../components/Button'
 import Field from '../components/Field'
 import Notice from '../components/Notice'
+import SubmitButton from '../components/SubmitButton'
 import { clearUserIfUnauthorized } from '../hooks/useCurrentUser'
 import { passwordHint, passwordSchema } from '../validation/password'
 
@@ -85,9 +85,9 @@ function ChangePasswordPage() {
           error={errors.confirm_password?.message}
           {...register('confirm_password')}
         />
-        <Button type="submit" block disabled={mutation.isPending}>
-          {mutation.isPending ? '變更中...' : '變更密碼'}
-        </Button>
+        <SubmitButton pending={mutation.isPending} pendingLabel="變更中...">
+          變更密碼
+        </SubmitButton>
       </form>
     </AuthCard>
   )

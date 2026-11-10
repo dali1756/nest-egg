@@ -6,9 +6,9 @@ import { useLocation, useNavigate } from 'react-router'
 import { z } from 'zod'
 import { ApiError, resetPassword } from '../api/auth'
 import AuthCard from '../components/AuthCard'
-import Button from '../components/Button'
 import Field from '../components/Field'
 import Notice from '../components/Notice'
+import SubmitButton from '../components/SubmitButton'
 import TextLink from '../components/TextLink'
 import { currentUserKey } from '../hooks/useCurrentUser'
 import { passwordHint, passwordSchema } from '../validation/password'
@@ -111,9 +111,9 @@ function ResetPasswordPage() {
           error={errors.confirm_password?.message}
           {...register('confirm_password')}
         />
-        <Button type="submit" block disabled={mutation.isPending}>
-          {mutation.isPending ? '重設中...' : '重設密碼'}
-        </Button>
+        <SubmitButton pending={mutation.isPending} pendingLabel="重設中...">
+          重設密碼
+        </SubmitButton>
       </form>
     </AuthCard>
   )

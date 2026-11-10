@@ -2,6 +2,7 @@ import { Link, useSearchParams } from 'react-router'
 import type { FxMonth, FxTrade } from '../api/fx'
 import Button from '../components/Button'
 import { buttonClassName } from '../components/buttonStyles'
+import { listRowLinkClassName } from '../components/listStyles'
 import LoadingMessage from '../components/LoadingMessage'
 import MonthNav from '../components/MonthNav'
 import Notice from '../components/Notice'
@@ -16,7 +17,7 @@ function TradeItem({ trade }: { trade: FxTrade }) {
     <li>
       <Link
         to={`/fx/${trade.id}`}
-        className="flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-brand-soft focus-visible:outline-3 focus-visible:outline-offset-1 focus-visible:outline-ring"
+        className={listRowLinkClassName}
       >
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="font-semibold text-heading">{directionLabel(trade)}</span>

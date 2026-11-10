@@ -20,6 +20,7 @@ type Options = {
   resetStatus?: number
   resetPending?: boolean
   changeStatus?: number
+  changePending?: boolean
   ledger?: LedgerOptions
   fx?: FxOptions
   portfolio?: PortfolioOptions
@@ -322,6 +323,7 @@ export function fakeBackend(opts: Options = {}) {
         return empty(204)
       }
       case 'POST /api/auth/password/change': {
+        if (opts.changePending) return neverResponds()
         const status = opts.changeStatus ?? 204
         if (status === 401) state.user = null
         return status === 204 ? empty(204) : json(status, { error: 'change failed' })

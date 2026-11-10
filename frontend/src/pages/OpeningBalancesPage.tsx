@@ -2,6 +2,7 @@ import { Link } from 'react-router'
 import type { Currency } from '../api/currencies'
 import type { OpeningBalance } from '../api/portfolio'
 import Button from '../components/Button'
+import { listRowLinkClassName } from '../components/listStyles'
 import LoadingMessage from '../components/LoadingMessage'
 import Notice from '../components/Notice'
 import TextLink from '../components/TextLink'
@@ -34,7 +35,7 @@ function OpeningRow({ currency, opening }: { currency: Currency; opening: Openin
     <li>
       <Link
         to={`/assets/opening-balances/${currency.code}`}
-        className="flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-brand-soft focus-visible:outline-3 focus-visible:outline-offset-1 focus-visible:outline-ring"
+        className={listRowLinkClassName}
       >
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="font-semibold text-heading">{`${currency.code} ${currency.name}`}</span>

@@ -5,11 +5,11 @@ import { Navigate } from 'react-router'
 import { z } from 'zod'
 import { ApiError, register as registerUser } from '../api/auth'
 import AuthCard from '../components/AuthCard'
-import Button from '../components/Button'
 import Field from '../components/Field'
 import { loadingText } from '../components/LoadingMessage'
 import Notice from '../components/Notice'
 import PageMessage from '../components/PageMessage'
+import SubmitButton from '../components/SubmitButton'
 import TextLink from '../components/TextLink'
 import { currentUserKey, useCurrentUser } from '../hooks/useCurrentUser'
 import { passwordHint, passwordSchema } from '../validation/password'
@@ -83,9 +83,9 @@ function RegisterPage() {
           error={errors.confirm_password?.message}
           {...register('confirm_password')}
         />
-        <Button type="submit" block disabled={mutation.isPending}>
-          {mutation.isPending ? '註冊中...' : '註冊'}
-        </Button>
+        <SubmitButton pending={mutation.isPending} pendingLabel="註冊中...">
+          註冊
+        </SubmitButton>
       </form>
       <p className="mt-5 text-center text-sm text-muted-foreground">
         已經有帳號？

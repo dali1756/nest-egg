@@ -65,6 +65,15 @@ test('requires the current password', async () => {
   expect(backend.called('POST', '/api/auth/password/change')).toBe(false)
 })
 
+test('disables the button while changing', async () => {
+  fakeBackend({ user: 'me@example.com', changePending: true })
+  renderApp('/change-password')
+
+  await fillChange('Passw0rd!', 'N3w-password', 'N3w-password')
+
+  expect(await screen.findByRole('button', { name: '變更中...' })).toBeDisabled()
+})
+
 test('sends the user to the login page when the session has expired', async () => {
   fakeBackend({ user: 'me@example.com', changeStatus: 401 })
   const { router } = renderApp('/change-password')
