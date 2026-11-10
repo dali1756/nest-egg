@@ -1,10 +1,9 @@
 import { Link } from 'react-router'
 import type { Currency } from '../api/currencies'
 import type { OpeningBalance } from '../api/portfolio'
-import Button from '../components/Button'
 import { listRowLinkClassName } from '../components/listStyles'
+import LoadError from '../components/LoadError'
 import LoadingMessage from '../components/LoadingMessage'
-import Notice from '../components/Notice'
 import TextLink from '../components/TextLink'
 import { formatAmount } from '../format/money'
 import { useCurrencies } from '../hooks/useCurrencies'
@@ -63,19 +62,13 @@ function OpeningBalancesPage() {
 
       {(currencies.isPending || openings.isPending) && <LoadingMessage />}
       {(currencies.isError || openings.isError) && (
-        <div className="mt-6 flex flex-col items-start gap-3">
-          <Notice tone="error">無法載入期初餘額，請稍後再試。</Notice>
-          <Button
-            type="button"
-            variant="quiet"
-            onClick={() => {
-              void currencies.refetch()
-              void openings.refetch()
-            }}
-          >
-            重新載入
-          </Button>
-        </div>
+        <LoadError
+          message="無法載入期初餘額，請稍後再試。"
+          onRetry={() => {
+            void currencies.refetch()
+            void openings.refetch()
+          }}
+        />
       )}
       {currencies.isSuccess && openings.isSuccess && (
         <ul className="mt-6 divide-y divide-border rounded-card border border-border bg-card shadow-card">

@@ -1,11 +1,10 @@
 import { Link, useSearchParams } from 'react-router'
 import type { FxMonth, FxTrade } from '../api/fx'
-import Button from '../components/Button'
 import { buttonClassName } from '../components/buttonStyles'
 import { listRowLinkClassName } from '../components/listStyles'
+import LoadError from '../components/LoadError'
 import LoadingMessage from '../components/LoadingMessage'
 import MonthNav from '../components/MonthNav'
-import Notice from '../components/Notice'
 import RateSource from '../components/RateSource'
 import { dayLabel, groupByDay, monthOrCurrent } from '../format/date'
 import { directionLabel, receivedAndPaid, spreadText } from '../format/fx'
@@ -75,14 +74,7 @@ function FxPage() {
       <MonthNav month={month} onChange={(next) => setSearchParams({ month: next })} />
 
       {query.isPending && <LoadingMessage />}
-      {query.isError && (
-        <div className="mt-6 flex flex-col items-start gap-3">
-          <Notice tone="error">無法載入換匯紀錄，請稍後再試。</Notice>
-          <Button type="button" variant="quiet" onClick={() => query.refetch()}>
-            重新載入
-          </Button>
-        </div>
-      )}
+      {query.isError && <LoadError message="無法載入換匯紀錄，請稍後再試。" onRetry={() => query.refetch()} />}
       {query.isSuccess &&
         (query.data.trades.length > 0 ? (
           <TradeList data={query.data} />

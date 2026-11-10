@@ -4,10 +4,10 @@ import type { Entry, MonthLedger, Total } from '../api/ledger'
 import Button from '../components/Button'
 import { buttonClassName } from '../components/buttonStyles'
 import { listRowLinkClassName } from '../components/listStyles'
+import LoadError from '../components/LoadError'
 import LoadingMessage from '../components/LoadingMessage'
 import MonthCalendar from '../components/MonthCalendar'
 import MonthNav from '../components/MonthNav'
-import Notice from '../components/Notice'
 import { dayLabel, groupByDay, monthOrCurrent, pickableDate, taipeiToday } from '../format/date'
 import { formatAmount } from '../format/money'
 import { useLedgerMonth } from '../hooks/useLedger'
@@ -177,14 +177,7 @@ function LedgerPage() {
       />
 
       {query.isPending && <LoadingMessage />}
-      {query.isError && (
-        <div className="mt-6 flex flex-col items-start gap-3">
-          <Notice tone="error">無法載入紀錄，請稍後再試。</Notice>
-          <Button type="button" variant="quiet" onClick={() => query.refetch()}>
-            重新載入
-          </Button>
-        </div>
-      )}
+      {query.isError && <LoadError message="無法載入紀錄，請稍後再試。" onRetry={() => query.refetch()} />}
       {query.isSuccess && (
         <MonthEntries data={query.data} selectedDate={selectedDate} onShowMonth={showMonth} newEntryLink={newEntryLink} />
       )}

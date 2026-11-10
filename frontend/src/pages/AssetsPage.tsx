@@ -1,8 +1,7 @@
 import type { CashBalance } from '../api/portfolio'
 import { TWD } from '../api/currencies'
-import Button from '../components/Button'
+import LoadError from '../components/LoadError'
 import LoadingMessage from '../components/LoadingMessage'
-import Notice from '../components/Notice'
 import RateSource from '../components/RateSource'
 import TextLink from '../components/TextLink'
 import { monthDay } from '../format/date'
@@ -110,14 +109,7 @@ function AssetsPage() {
     <main className="mx-auto max-w-170 px-5 pb-16">
       <h1 className="mt-12 text-3xl font-bold tracking-[-0.02em] text-heading">資產</h1>
       {query.isPending && <LoadingMessage />}
-      {query.isError && (
-        <div className="mt-6 flex flex-col items-start gap-3">
-          <Notice tone="error">無法載入資產，請稍後再試。</Notice>
-          <Button type="button" variant="quiet" onClick={() => query.refetch()}>
-            重新載入
-          </Button>
-        </div>
-      )}
+      {query.isError && <LoadError message="無法載入資產，請稍後再試。" onRetry={() => query.refetch()} />}
       {query.isSuccess &&
         (query.data.cash.length > 0 ? (
           <CashSection cash={query.data.cash} />

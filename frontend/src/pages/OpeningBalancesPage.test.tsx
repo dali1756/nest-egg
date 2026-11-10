@@ -74,9 +74,11 @@ test('says it is loading', async () => {
 })
 
 test('offers to reload when the opening balances fail', async () => {
-  fakeBackend({ user: 'me@example.com', portfolio: { openingsStatus: 500 } })
+  const backend = fakeBackend({ user: 'me@example.com', portfolio: { openingsStatus: 500 } })
   renderApp('/assets/opening-balances')
 
   expect(await screen.findByRole('alert')).toHaveTextContent('無法載入期初餘額，請稍後再試。')
-  expect(screen.getByRole('button', { name: '重新載入' })).toBeInTheDocument()
+  await userEvent.setup().click(screen.getByRole('button', { name: '重新載入' }))
+
+  await waitFor(() => expect(backend.calls.filter((c) => c.path === '/api/opening-balances')).toHaveLength(2))
 })
