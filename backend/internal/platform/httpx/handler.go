@@ -3,6 +3,7 @@ package httpx
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 
@@ -11,6 +12,13 @@ import (
 )
 
 type Handler func(http.ResponseWriter, *http.Request) error
+
+type StatusError struct {
+	Status  int
+	Message string
+}
+
+func (e *StatusError) Error() string { return fmt.Sprintf("%d %s", e.Status, e.Message) }
 
 func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	tw := &trackingWriter{ResponseWriter: w}
@@ -27,6 +35,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		invalid  *apperr.ValidationError
 		badJSON  *badJSONError
 		tooLarge *http.MaxBytesError
+		status   *StatusError
 	)
 	switch {
 	case errors.Is(err, apperr.ErrNotFound):
@@ -37,6 +46,8 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, r, http.StatusRequestEntityTooLarge, "request body too large", nil)
 	case errors.As(err, &badJSON):
 		WriteError(w, r, http.StatusBadRequest, "invalid json", nil)
+	case errors.As(err, &status):
+		WriteError(w, r, status.Status, status.Message, nil)
 	default:
 		slog.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "err", err)
 		WriteInternalError(w, r)

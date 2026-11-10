@@ -54,6 +54,12 @@ func TestHandlerTurnsErrorsIntoResponses(t *testing.T) {
 			bodyJSON: `{"error":"invalid input","fields":{"amount":"must be positive"},"request_id":"%s"}`,
 		},
 		{
+			name:     "status",
+			err:      fmt.Errorf("register: %w", &StatusError{Status: http.StatusConflict, Message: "email already registered"}),
+			status:   http.StatusConflict,
+			bodyJSON: `{"error":"email already registered","request_id":"%s"}`,
+		},
+		{
 			name:     "unexpected",
 			err:      fmt.Errorf("query: %w", errors.New("connection refused")),
 			status:   http.StatusInternalServerError,
