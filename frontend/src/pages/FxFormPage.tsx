@@ -1,10 +1,9 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { useNavigate, useParams } from 'react-router'
 import { z } from 'zod'
 import { TWD, type Currency } from '../api/currencies'
-import { fieldErrorsFrom, rejectedFields } from '../api/fieldErrors'
 import { createFxTrade, deleteFxTrade, updateFxTrade, type FxRates, type FxTrade, type FxTradeInput, type Side } from '../api/fx'
 import { ApiError } from '../api/http'
 import ChoiceGroup from '../components/ChoiceGroup'
@@ -22,9 +21,9 @@ import { taipeiToday } from '../format/date'
 import { spreadText } from '../format/fx'
 import { parsePathId } from '../format/id'
 import { useCurrencies } from '../hooks/useCurrencies'
-import { clearUserIfUnauthorized } from '../hooks/useCurrentUser'
 import { fxTradesKey, useFxPreview, useFxTrade, type FxPreviewInput } from '../hooks/useFx'
 import { portfolioKey } from '../hooks/usePortfolio'
+import { useSaveMutation } from '../hooks/useSaveMutation'
 import { amountField, decimalPlacesProblem } from '../validation/amount'
 import { noteField, pastDateField } from '../validation/fields'
 
@@ -134,16 +133,13 @@ function FxForm({ currencies, trade }: FxFormProps) {
   const values = useWatch({ control }) as TradeValues
   const rates = useFxPreview(previewInputFrom(values, schema), trade?.id)
   const labels = amountLabels[values.side]
-  const mutation = useMutation({
+  const { mutation, showGeneralError } = useSaveMutation({
     mutationFn: (input: FxTradeInput) => (trade ? updateFxTrade(trade.id, input) : createFxTrade(input)),
     onSuccess: (saved) => refreshAndShowMonth(saved.traded_on),
-    onError: (err) => {
-      clearUserIfUnauthorized(queryClient, err)
-      for (const [field, message] of rejectedFields(err, serverFieldMessages)) setError(field, { message })
-    },
+    serverFieldMessages,
+    setError,
   })
   const { errors } = formState
-  const showGeneralError = mutation.isError && !fieldErrorsFrom(mutation.error)
 
   return (
     <form className="mt-7 flex flex-col gap-5" noValidate onSubmit={handleSubmit((input) => mutation.mutate(input))}>

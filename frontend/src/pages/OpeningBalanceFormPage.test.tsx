@@ -138,6 +138,25 @@ describe('saving', () => {
     expect(router.state.location.pathname).toBe('/assets/opening-balances/USD')
   })
 
+  test('shows a general error when saving fails for another reason', async () => {
+    openForm('TWD', { saveStatus: 500 })
+
+    const user = await fill({ amount: '1000' })
+    await user.click(screen.getByRole('button', { name: '儲存' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('儲存失敗，請稍後再試')
+  })
+
+  test('sends the user to the login page when the session has expired', async () => {
+    const { backend, router } = openForm('TWD', { saveStatus: 401 })
+
+    const user = await fill({ amount: '1000' })
+    backend.state.user = null
+    await user.click(screen.getByRole('button', { name: '儲存' }))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/login'))
+  })
+
   test('checks the TWD cost before sending', async () => {
     const { backend } = openForm('USD')
 

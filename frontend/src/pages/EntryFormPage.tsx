@@ -1,11 +1,10 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { useNavigate, useParams, useSearchParams } from 'react-router'
 import { z } from 'zod'
 import { ApiError } from '../api/http'
 import { TWD, type Currency } from '../api/currencies'
-import { fieldErrorsFrom, rejectedFields } from '../api/fieldErrors'
 import {
   createEntry,
   deleteEntry,
@@ -30,9 +29,9 @@ import TextLink from '../components/TextLink'
 import { pickableDate, taipeiToday } from '../format/date'
 import { parsePathId } from '../format/id'
 import { useCurrencies } from '../hooks/useCurrencies'
-import { clearUserIfUnauthorized } from '../hooks/useCurrentUser'
 import { ledgerEntriesKey, useLedgerEntry } from '../hooks/useLedger'
 import { portfolioKey } from '../hooks/usePortfolio'
+import { useSaveMutation } from '../hooks/useSaveMutation'
 import { amountField, decimalPlacesProblem } from '../validation/amount'
 import { noteField, pastDateField } from '../validation/fields'
 
@@ -121,16 +120,13 @@ function EntryForm({ categories, currencies, entry, pickedDate }: EntryFormProps
     defaultValues: defaultValuesFor(entry, pickedDate),
   })
   const [kind, occurredOn, currency] = useWatch({ control, name: ['kind', 'occurred_on', 'currency'] })
-  const mutation = useMutation({
+  const { mutation, showGeneralError } = useSaveMutation({
     mutationFn: (input: EntryInput) => (entry ? updateEntry(entry.id, input) : createEntry(input)),
     onSuccess: (saved) => refreshAndShowLedger(saved.occurred_on),
-    onError: (err) => {
-      clearUserIfUnauthorized(queryClient, err)
-      for (const [field, message] of rejectedFields(err, serverFieldMessages)) setError(field, { message })
-    },
+    serverFieldMessages,
+    setError,
   })
   const { errors } = formState
-  const showGeneralError = mutation.isError && !fieldErrorsFrom(mutation.error)
 
   return (
     <form

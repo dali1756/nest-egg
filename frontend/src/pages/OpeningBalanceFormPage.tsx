@@ -1,10 +1,9 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { useForm, useWatch } from 'react-hook-form'
 import { useNavigate, useParams } from 'react-router'
 import { z } from 'zod'
 import { TWD, type Currency } from '../api/currencies'
-import { fieldErrorsFrom, rejectedFields } from '../api/fieldErrors'
 import { deleteOpeningBalance, putOpeningBalance, type OpeningBalance, type OpeningBalanceInput } from '../api/portfolio'
 import ConfirmDeleteButton from '../components/ConfirmDeleteButton'
 import Field from '../components/Field'
@@ -17,8 +16,8 @@ import TextLink from '../components/TextLink'
 import { monthDay, taipeiToday } from '../format/date'
 import { formatAmount, formatAmountWithPlaces } from '../format/money'
 import { useCurrencies } from '../hooks/useCurrencies'
-import { clearUserIfUnauthorized } from '../hooks/useCurrentUser'
 import { portfolioKey, useOpeningBalance, useOpeningBalancePreview, type OpeningPreview } from '../hooks/usePortfolio'
+import { useSaveMutation } from '../hooks/useSaveMutation'
 import { amountField, decimalPlacesProblem, optionalAmountField } from '../validation/amount'
 import { pastDateField } from '../validation/fields'
 
@@ -97,16 +96,13 @@ function OpeningForm({ currency, twd, opening }: OpeningFormProps) {
   })
   const values = useWatch({ control }) as OpeningValues
   const preview = useOpeningBalancePreview(currency.code, foreign ? previewInputFrom(values, schema) : undefined)
-  const mutation = useMutation({
+  const { mutation, showGeneralError } = useSaveMutation({
     mutationFn: (input: OpeningBalanceInput) => putOpeningBalance(currency.code, input),
     onSuccess: refreshAndShowList,
-    onError: (err) => {
-      clearUserIfUnauthorized(queryClient, err)
-      for (const [field, message] of rejectedFields(err, serverFieldMessages)) setError(field, { message })
-    },
+    serverFieldMessages,
+    setError,
   })
   const { errors } = formState
-  const showGeneralError = mutation.isError && !fieldErrorsFrom(mutation.error)
 
   return (
     <form className="mt-7 flex flex-col gap-5" noValidate onSubmit={handleSubmit((input) => mutation.mutate(input))}>

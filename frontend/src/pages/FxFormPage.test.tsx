@@ -155,6 +155,17 @@ describe('recording a trade', () => {
 
     expect(await screen.findByText('儲存失敗，請稍後再試')).toBeInTheDocument()
   })
+
+  test('sends the user to the login page when the session has expired', async () => {
+    const backend = fakeBackend({ user: 'me@example.com', fx: { saveStatus: 401 } })
+    const { router } = renderApp('/fx/new')
+
+    const user = await fillAmounts('1000', '32420')
+    backend.state.user = null
+    await user.click(screen.getByRole('button', { name: '儲存' }))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/login'))
+  })
 })
 
 describe('previewing the rates', () => {
