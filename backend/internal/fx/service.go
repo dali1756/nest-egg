@@ -115,7 +115,7 @@ func (s *Service) Trade(ctx context.Context, userID, id int64) (Trade, error) {
 	if err != nil {
 		return Trade{}, err
 	}
-	twd, err := s.twd(ctx)
+	twd, err := currency.GetTWD(ctx, s.currencies)
 	if err != nil {
 		return Trade{}, err
 	}
@@ -154,7 +154,7 @@ func (s *Service) Month(ctx context.Context, userID int64, month string) (MonthT
 	if err != nil {
 		return MonthTrades{}, err
 	}
-	twd, err := s.twd(ctx)
+	twd, err := currency.GetTWD(ctx, s.currencies)
 	if err != nil {
 		return MonthTrades{}, err
 	}
@@ -184,7 +184,7 @@ func (s *Service) preview(ctx context.Context, in TradeInput, current *Trade) (T
 	if v.MarketRate, err = s.marketRateFor(ctx, v, current); err != nil {
 		return Trade{}, err
 	}
-	twd, err := s.twd(ctx)
+	twd, err := currency.GetTWD(ctx, s.currencies)
 	if err != nil {
 		return Trade{}, err
 	}
@@ -201,16 +201,8 @@ func (s *Service) marketRateFor(ctx context.Context, v TradeValues, current *Tra
 	return rate.MarketRateInTWD(ctx, s.rates, v.Currency, v.TradedOn)
 }
 
-func (s *Service) twd(ctx context.Context) (currency.Currency, error) {
-	twd, err := s.currencies.Get(ctx, currency.TWD)
-	if err != nil {
-		return currency.Currency{}, fmt.Errorf("look up %s: %w", currency.TWD, err)
-	}
-	return twd, nil
-}
-
 func (s *Service) validate(ctx context.Context, in TradeInput) (TradeValues, error) {
-	twd, err := s.twd(ctx)
+	twd, err := currency.GetTWD(ctx, s.currencies)
 	if err != nil {
 		return TradeValues{}, err
 	}

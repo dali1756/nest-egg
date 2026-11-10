@@ -10,7 +10,10 @@ import (
 	"nest-egg/backend/internal/platform/apperr"
 )
 
-var usd = Currency{Code: "USD", Name: "美元", MinorUnit: 2}
+var (
+	usd = Currency{Code: "USD", Name: "美元", MinorUnit: 2}
+	twd = Currency{Code: TWD, Name: "新臺幣", MinorUnit: 2}
+)
 
 type fakeGetter struct{ err error }
 
@@ -18,10 +21,12 @@ func (f fakeGetter) Get(_ context.Context, code string) (Currency, error) {
 	if f.err != nil {
 		return Currency{}, f.err
 	}
-	if code != usd.Code {
-		return Currency{}, apperr.ErrNotFound
+	for _, c := range []Currency{usd, twd} {
+		if c.Code == code {
+			return c, nil
+		}
 	}
-	return usd, nil
+	return Currency{}, apperr.ErrNotFound
 }
 
 func TestLookupFindsTheCurrency(t *testing.T) {
@@ -44,6 +49,20 @@ func TestLookupPassesStoreErrorsOn(t *testing.T) {
 	broken := errors.New("connection refused")
 	if _, _, err := Lookup(context.Background(), fakeGetter{err: broken}, "USD"); !errors.Is(err, broken) {
 		t.Errorf("Lookup error = %v, want the store error", err)
+	}
+}
+
+func TestGetTWDReturnsTWD(t *testing.T) {
+	got, err := GetTWD(context.Background(), fakeGetter{})
+	if err != nil || got != twd {
+		t.Errorf("GetTWD = %+v, %v; want TWD", got, err)
+	}
+}
+
+func TestGetTWDPassesStoreErrorsOn(t *testing.T) {
+	broken := errors.New("connection refused")
+	if _, err := GetTWD(context.Background(), fakeGetter{err: broken}); !errors.Is(err, broken) {
+		t.Errorf("GetTWD error = %v, want the store error", err)
 	}
 }
 

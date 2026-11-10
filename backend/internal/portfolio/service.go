@@ -112,7 +112,7 @@ func (s *Service) PreviewOpening(ctx context.Context, userID int64, code string,
 	if err != nil {
 		return Opening{}, err
 	}
-	twd, err := s.twd(ctx)
+	twd, err := currency.GetTWD(ctx, s.currencies)
 	if err != nil {
 		return Opening{}, err
 	}
@@ -127,7 +127,7 @@ func (s *Service) Opening(ctx context.Context, userID int64, code string) (Openi
 	if err != nil {
 		return Opening{}, err
 	}
-	twd, err := s.twd(ctx)
+	twd, err := currency.GetTWD(ctx, s.currencies)
 	if err != nil {
 		return Opening{}, err
 	}
@@ -140,7 +140,7 @@ func (s *Service) Openings(ctx context.Context, userID int64) ([]Opening, error)
 	if err != nil {
 		return nil, err
 	}
-	twd, err := s.twd(ctx)
+	twd, err := currency.GetTWD(ctx, s.currencies)
 	if err != nil {
 		return nil, err
 	}
@@ -187,16 +187,8 @@ func (s *Service) latestRates(ctx context.Context, codes []string) (map[string]*
 	return latest, nil
 }
 
-func (s *Service) twd(ctx context.Context) (currency.Currency, error) {
-	twd, err := s.currencies.Get(ctx, currency.TWD)
-	if err != nil {
-		return currency.Currency{}, fmt.Errorf("look up %s: %w", currency.TWD, err)
-	}
-	return twd, nil
-}
-
 func (s *Service) openingValues(ctx context.Context, userID int64, cur currency.Currency, in OpeningInput) (OpeningValues, error) {
-	twd, err := s.twd(ctx)
+	twd, err := currency.GetTWD(ctx, s.currencies)
 	if err != nil {
 		return OpeningValues{}, err
 	}

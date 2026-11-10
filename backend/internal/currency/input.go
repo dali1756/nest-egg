@@ -30,6 +30,14 @@ func Lookup(ctx context.Context, currencies Getter, code string) (*Currency, str
 	return &c, "", nil
 }
 
+func GetTWD(ctx context.Context, currencies Getter) (Currency, error) {
+	twd, err := currencies.Get(ctx, TWD)
+	if err != nil {
+		return Currency{}, fmt.Errorf("look up %s: %w", TWD, err)
+	}
+	return twd, nil
+}
+
 var amountPattern = regexp.MustCompile(`^[0-9]{1,16}(\.[0-9]+)?$`)
 
 func ParseAmount(raw string, cur *Currency) (decimal.Decimal, string) {
