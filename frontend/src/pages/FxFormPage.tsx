@@ -10,13 +10,13 @@ import ChoiceGroup from '../components/ChoiceGroup'
 import ConfirmDeleteButton from '../components/ConfirmDeleteButton'
 import Field from '../components/Field'
 import LoadingMessage from '../components/LoadingMessage'
+import NotFoundMessage from '../components/NotFoundMessage'
 import Notice from '../components/Notice'
 import OpeningCutoffNotice from '../components/OpeningCutoffNotice'
 import PageMessage from '../components/PageMessage'
 import RateSource from '../components/RateSource'
 import SaveButton from '../components/SaveButton'
 import SelectField from '../components/SelectField'
-import TextLink from '../components/TextLink'
 import { taipeiToday } from '../format/date'
 import { spreadText } from '../format/fx'
 import { parsePathId } from '../format/id'
@@ -190,15 +190,6 @@ function FxForm({ currencies, trade }: FxFormProps) {
   )
 }
 
-function NotFound() {
-  return (
-    <div className="mx-auto mt-12 flex max-w-170 flex-col items-start gap-2 px-5 text-muted-foreground">
-      <p>找不到這筆換匯</p>
-      <TextLink to="/fx">回換匯頁</TextLink>
-    </div>
-  )
-}
-
 function FxFormPage() {
   const { id } = useParams()
   const editing = id !== undefined
@@ -207,7 +198,9 @@ function FxFormPage() {
   const trade = useFxTrade(tradeId)
 
   const missing = trade.error instanceof ApiError && trade.error.status === 404
-  if (editing && (tradeId === undefined || missing)) return <NotFound />
+  if (editing && (tradeId === undefined || missing)) {
+    return <NotFoundMessage message="找不到這筆換匯" backTo="/fx" backLabel="回換匯頁" />
+  }
   if (currencies.isError || trade.isError) {
     return <PageMessage>無法載入表單，請稍後重新整理。</PageMessage>
   }

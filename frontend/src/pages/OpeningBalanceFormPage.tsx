@@ -8,6 +8,7 @@ import { deleteOpeningBalance, putOpeningBalance, type OpeningBalance, type Open
 import ConfirmDeleteButton from '../components/ConfirmDeleteButton'
 import Field from '../components/Field'
 import LoadingMessage from '../components/LoadingMessage'
+import NotFoundMessage from '../components/NotFoundMessage'
 import Notice from '../components/Notice'
 import PageMessage from '../components/PageMessage'
 import RateSource from '../components/RateSource'
@@ -149,24 +150,15 @@ function OpeningForm({ currency, twd, opening }: OpeningFormProps) {
   )
 }
 
-function NotFound() {
-  return (
-    <div className="mx-auto mt-12 flex max-w-170 flex-col items-start gap-2 px-5 text-muted-foreground">
-      <p>找不到這個幣別</p>
-      <TextLink to={openingBalancesPath} className="ml-0">
-        回期初餘額
-      </TextLink>
-    </div>
-  )
-}
-
 function OpeningBalanceFormPage() {
   const { currency: code = '' } = useParams()
   const currencies = useCurrencies()
   const opening = useOpeningBalance(code)
   const currency = currencies.data?.find((c) => c.code === code)
 
-  if (currencies.isSuccess && !currency) return <NotFound />
+  if (currencies.isSuccess && !currency) {
+    return <NotFoundMessage message="找不到這個幣別" backTo={openingBalancesPath} backLabel="回期初餘額" />
+  }
   if (currencies.isError || (opening.isError && !opening.isNotSet)) {
     return <PageMessage>無法載入表單，請稍後重新整理。</PageMessage>
   }

@@ -19,13 +19,13 @@ import ChoiceGroup from '../components/ChoiceGroup'
 import ConfirmDeleteButton from '../components/ConfirmDeleteButton'
 import Field from '../components/Field'
 import LoadingMessage from '../components/LoadingMessage'
+import NotFoundMessage from '../components/NotFoundMessage'
 import Notice from '../components/Notice'
 import OpeningCutoffNotice from '../components/OpeningCutoffNotice'
 import PageMessage from '../components/PageMessage'
 import RateSource from '../components/RateSource'
 import SaveButton from '../components/SaveButton'
 import SelectField from '../components/SelectField'
-import TextLink from '../components/TextLink'
 import { pickableDate, taipeiToday } from '../format/date'
 import { parsePathId } from '../format/id'
 import { useCurrencies } from '../hooks/useCurrencies'
@@ -203,15 +203,6 @@ function EntryForm({ categories, currencies, entry, pickedDate }: EntryFormProps
   )
 }
 
-function NotFound() {
-  return (
-    <div className="mx-auto mt-12 flex max-w-170 flex-col items-start gap-2 px-5 text-muted-foreground">
-      <p>找不到這筆紀錄</p>
-      <TextLink to="/">回記帳頁</TextLink>
-    </div>
-  )
-}
-
 function EntryFormPage() {
   const { id } = useParams()
   const [searchParams] = useSearchParams()
@@ -223,7 +214,9 @@ function EntryFormPage() {
   const entry = useLedgerEntry(entryId)
 
   const missing = entry.error instanceof ApiError && entry.error.status === 404
-  if (editing && (entryId === undefined || missing)) return <NotFound />
+  if (editing && (entryId === undefined || missing)) {
+    return <NotFoundMessage message="找不到這筆紀錄" backTo="/" backLabel="回記帳頁" />
+  }
   if (categories.isError || currencies.isError || entry.isError) {
     return <PageMessage>無法載入表單，請稍後重新整理。</PageMessage>
   }
