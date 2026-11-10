@@ -237,7 +237,9 @@ func TestRegisterLogsInThenLogout(t *testing.T) {
 	if ck := sessionCookie(t, out); ck.MaxAge >= 0 {
 		t.Errorf("logout cookie MaxAge = %d, want < 0 (deleted)", ck.MaxAge)
 	}
-	expectStatus(t, "me after logout", e.do(t, c, http.MethodGet, "/api/auth/me", nil), http.StatusUnauthorized)
+	afterLogout := e.do(t, c, http.MethodGet, "/api/auth/me", nil)
+	expectStatus(t, "me after logout", afterLogout, http.StatusUnauthorized)
+	expectError(t, "me after logout", afterLogout, "unauthorized")
 }
 
 func TestSecureCookieUsesHostPrefix(t *testing.T) {
