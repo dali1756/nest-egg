@@ -4,7 +4,7 @@ import { Controller, useForm, useWatch } from 'react-hook-form'
 import { useNavigate, useParams, useSearchParams } from 'react-router'
 import { z } from 'zod'
 import { ApiError } from '../api/http'
-import { getCurrencies, TWD, type Currency } from '../api/currencies'
+import { TWD, type Currency } from '../api/currencies'
 import { fieldErrorsFrom, rejectedFields } from '../api/fieldErrors'
 import {
   createEntry,
@@ -16,7 +16,6 @@ import {
   type EntryInput,
   type Kind,
 } from '../api/ledger'
-import Button from '../components/Button'
 import ChoiceGroup from '../components/ChoiceGroup'
 import ConfirmDeleteButton from '../components/ConfirmDeleteButton'
 import Field from '../components/Field'
@@ -25,10 +24,12 @@ import Notice from '../components/Notice'
 import OpeningCutoffNotice from '../components/OpeningCutoffNotice'
 import PageMessage from '../components/PageMessage'
 import RateSource from '../components/RateSource'
+import SaveButton from '../components/SaveButton'
 import SelectField from '../components/SelectField'
 import TextLink from '../components/TextLink'
 import { pickableDate, taipeiToday } from '../format/date'
 import { parsePathId } from '../format/id'
+import { useCurrencies } from '../hooks/useCurrencies'
 import { clearUserIfUnauthorized } from '../hooks/useCurrentUser'
 import { ledgerEntriesKey, useLedgerEntry } from '../hooks/useLedger'
 import { portfolioKey } from '../hooks/usePortfolio'
@@ -194,9 +195,7 @@ function EntryForm({ categories, currencies, entry, pickedDate }: EntryFormProps
       <Field id="entry-note" label="備註" autoComplete="off" error={errors.note?.message} {...register('note')} />
       {entry && <MarketRateNote entry={entry} />}
       <OpeningCutoffNotice date={occurredOn} currencies={[currency]} />
-      <Button type="submit" block disabled={mutation.isPending}>
-        {mutation.isPending ? '儲存中...' : '儲存'}
-      </Button>
+      <SaveButton pending={mutation.isPending} />
       {entry && (
         <ConfirmDeleteButton
           question="確定要刪除這筆紀錄嗎？"
@@ -224,7 +223,7 @@ function EntryFormPage() {
   const pickedDate = editing ? undefined : pickableDate(searchParams.get('date'), taipeiToday())
   const entryId = parsePathId(id)
   const categories = useQuery({ queryKey: ['categories'], queryFn: getCategories })
-  const currencies = useQuery({ queryKey: ['currencies'], queryFn: getCurrencies })
+  const currencies = useCurrencies()
   const entry = useLedgerEntry(entryId)
 
   const missing = entry.error instanceof ApiError && entry.error.status === 404

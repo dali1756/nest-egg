@@ -1,13 +1,12 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { useNavigate, useParams } from 'react-router'
 import { z } from 'zod'
-import { getCurrencies, TWD, type Currency } from '../api/currencies'
+import { TWD, type Currency } from '../api/currencies'
 import { fieldErrorsFrom, rejectedFields } from '../api/fieldErrors'
 import { createFxTrade, deleteFxTrade, updateFxTrade, type FxRates, type FxTrade, type FxTradeInput, type Side } from '../api/fx'
 import { ApiError } from '../api/http'
-import Button from '../components/Button'
 import ChoiceGroup from '../components/ChoiceGroup'
 import ConfirmDeleteButton from '../components/ConfirmDeleteButton'
 import Field from '../components/Field'
@@ -16,11 +15,13 @@ import Notice from '../components/Notice'
 import OpeningCutoffNotice from '../components/OpeningCutoffNotice'
 import PageMessage from '../components/PageMessage'
 import RateSource from '../components/RateSource'
+import SaveButton from '../components/SaveButton'
 import SelectField from '../components/SelectField'
 import TextLink from '../components/TextLink'
 import { taipeiToday } from '../format/date'
 import { spreadText } from '../format/fx'
 import { parsePathId } from '../format/id'
+import { useCurrencies } from '../hooks/useCurrencies'
 import { clearUserIfUnauthorized } from '../hooks/useCurrentUser'
 import { fxTradesKey, useFxPreview, useFxTrade, type FxPreviewInput } from '../hooks/useFx'
 import { portfolioKey } from '../hooks/usePortfolio'
@@ -181,9 +182,7 @@ function FxForm({ currencies, trade }: FxFormProps) {
       <Field id="fx-note" label="備註" autoComplete="off" error={errors.note?.message} {...register('note')} />
       {rates && <RatesPreview side={values.side} rates={rates} />}
       <OpeningCutoffNotice date={values.traded_on} currencies={[values.currency, TWD]} />
-      <Button type="submit" block disabled={mutation.isPending}>
-        {mutation.isPending ? '儲存中...' : '儲存'}
-      </Button>
+      <SaveButton pending={mutation.isPending} />
       {trade && (
         <ConfirmDeleteButton
           question="確定要刪除這筆換匯嗎？"
@@ -208,7 +207,7 @@ function FxFormPage() {
   const { id } = useParams()
   const editing = id !== undefined
   const tradeId = parsePathId(id)
-  const currencies = useQuery({ queryKey: ['currencies'], queryFn: getCurrencies })
+  const currencies = useCurrencies()
   const trade = useFxTrade(tradeId)
 
   const missing = trade.error instanceof ApiError && trade.error.status === 404

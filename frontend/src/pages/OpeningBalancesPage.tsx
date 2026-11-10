@@ -1,12 +1,12 @@
-import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router'
-import { getCurrencies, type Currency } from '../api/currencies'
+import type { Currency } from '../api/currencies'
 import type { OpeningBalance } from '../api/portfolio'
 import Button from '../components/Button'
 import LoadingMessage from '../components/LoadingMessage'
 import Notice from '../components/Notice'
 import TextLink from '../components/TextLink'
 import { formatAmount } from '../format/money'
+import { useCurrencies } from '../hooks/useCurrencies'
 import { useOpeningBalances } from '../hooks/usePortfolio'
 
 function OpeningAmount({ opening }: { opening: OpeningBalance }) {
@@ -47,7 +47,7 @@ function OpeningRow({ currency, opening }: { currency: Currency; opening: Openin
 }
 
 function OpeningBalancesPage() {
-  const currencies = useQuery({ queryKey: ['currencies'], queryFn: getCurrencies })
+  const currencies = useCurrencies()
   const openings = useOpeningBalances()
 
   return (

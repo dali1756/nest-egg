@@ -1,21 +1,22 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm, useWatch } from 'react-hook-form'
 import { useNavigate, useParams } from 'react-router'
 import { z } from 'zod'
-import { getCurrencies, TWD, type Currency } from '../api/currencies'
+import { TWD, type Currency } from '../api/currencies'
 import { fieldErrorsFrom, rejectedFields } from '../api/fieldErrors'
 import { deleteOpeningBalance, putOpeningBalance, type OpeningBalance, type OpeningBalanceInput } from '../api/portfolio'
-import Button from '../components/Button'
 import ConfirmDeleteButton from '../components/ConfirmDeleteButton'
 import Field from '../components/Field'
 import LoadingMessage from '../components/LoadingMessage'
 import Notice from '../components/Notice'
 import PageMessage from '../components/PageMessage'
 import RateSource from '../components/RateSource'
+import SaveButton from '../components/SaveButton'
 import TextLink from '../components/TextLink'
 import { monthDay, taipeiToday } from '../format/date'
 import { formatAmount, formatAmountWithPlaces } from '../format/money'
+import { useCurrencies } from '../hooks/useCurrencies'
 import { clearUserIfUnauthorized } from '../hooks/useCurrentUser'
 import { portfolioKey, useOpeningBalance, useOpeningBalancePreview, type OpeningPreview } from '../hooks/usePortfolio'
 import { amountField, decimalPlacesProblem, optionalAmountField } from '../validation/amount'
@@ -140,9 +141,7 @@ function OpeningForm({ currency, twd, opening }: OpeningFormProps) {
           <CostPreview currency={currency} values={values} preview={preview} />
         </>
       )}
-      <Button type="submit" block disabled={mutation.isPending}>
-        {mutation.isPending ? '儲存中...' : '儲存'}
-      </Button>
+      <SaveButton pending={mutation.isPending} />
       {opening && (
         <ConfirmDeleteButton
           question={`確定要刪除 ${currency.code} 的期初餘額嗎？`}
@@ -167,7 +166,7 @@ function NotFound() {
 
 function OpeningBalanceFormPage() {
   const { currency: code = '' } = useParams()
-  const currencies = useQuery({ queryKey: ['currencies'], queryFn: getCurrencies })
+  const currencies = useCurrencies()
   const opening = useOpeningBalance(code)
   const currency = currencies.data?.find((c) => c.code === code)
 
