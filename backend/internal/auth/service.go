@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+
+	"nest-egg/backend/internal/platform/apperr"
 )
 
 const (
@@ -28,12 +30,6 @@ var (
 	ErrInvalidResetToken  = errors.New("invalid or expired reset token")
 	ErrNotFound           = errors.New("not found")
 )
-
-type ValidationError struct {
-	Fields map[string]string
-}
-
-func (e *ValidationError) Error() string { return "invalid input" }
 
 type User struct {
 	ID    int64
@@ -129,7 +125,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (User, string,
 		fields["email"] = "must be a valid email address"
 	}
 	if len(fields) > 0 {
-		return User{}, "", &ValidationError{Fields: fields}
+		return User{}, "", &apperr.ValidationError{Fields: fields}
 	}
 
 	hash, err := s.hasher.hash(in.Password)
@@ -227,7 +223,7 @@ type ChangePasswordInput struct {
 
 func (s *Service) ChangePassword(ctx context.Context, user User, in ChangePasswordInput) (string, error) {
 	if fields := passwordFieldErrors(in.Password, in.ConfirmPassword); len(fields) > 0 {
-		return "", &ValidationError{Fields: fields}
+		return "", &apperr.ValidationError{Fields: fields}
 	}
 	u, err := s.store.UserByEmail(ctx, user.Email)
 	if err != nil {
@@ -375,7 +371,7 @@ type ResetPasswordInput struct {
 // ResetPassword 成功後所有裝置都會被登出，要用新密碼重新登入。
 func (s *Service) ResetPassword(ctx context.Context, in ResetPasswordInput) error {
 	if fields := passwordFieldErrors(in.Password, in.ConfirmPassword); len(fields) > 0 {
-		return &ValidationError{Fields: fields}
+		return &apperr.ValidationError{Fields: fields}
 	}
 	if in.Token == "" || len(in.Token) > maxTokenLen {
 		return ErrInvalidResetToken

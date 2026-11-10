@@ -24,20 +24,20 @@ type handlers struct {
 	rateLimit func(http.Handler) http.Handler
 }
 
-func (h handlers) limit(f http.HandlerFunc) http.Handler {
-	return h.rateLimit(f)
+func (h handlers) limit(next http.Handler) http.Handler {
+	return h.rateLimit(next)
 }
 
 func addRoutes(public, protected *http.ServeMux, h handlers) {
 	public.HandleFunc("GET /api/health", h.health.Get)
-	public.Handle("POST /api/auth/register", h.limit(h.auth.Register))
-	public.Handle("POST /api/auth/login", h.limit(h.auth.Login))
-	public.HandleFunc("POST /api/auth/logout", h.auth.Logout)
-	public.Handle("POST /api/auth/password/forgot", h.limit(h.auth.ForgotPassword))
-	public.Handle("POST /api/auth/password/reset", h.limit(h.auth.ResetPassword))
+	public.Handle("POST /api/auth/register", h.limit(httpx.Handler(h.auth.Register)))
+	public.Handle("POST /api/auth/login", h.limit(httpx.Handler(h.auth.Login)))
+	public.Handle("POST /api/auth/logout", httpx.Handler(h.auth.Logout))
+	public.Handle("POST /api/auth/password/forgot", h.limit(httpx.Handler(h.auth.ForgotPassword)))
+	public.Handle("POST /api/auth/password/reset", h.limit(httpx.Handler(h.auth.ResetPassword)))
 
-	protected.HandleFunc("GET /api/auth/me", h.auth.Me)
-	protected.Handle("POST /api/auth/password/change", h.limit(h.auth.ChangePassword))
+	protected.Handle("GET /api/auth/me", httpx.Handler(h.auth.Me))
+	protected.Handle("POST /api/auth/password/change", h.limit(httpx.Handler(h.auth.ChangePassword)))
 	protected.Handle("GET /api/currencies", httpx.Handler(h.currency.List))
 	protected.Handle("GET /api/rates", httpx.Handler(h.rate.Get))
 	protected.Handle("GET /api/categories", httpx.Handler(h.ledger.ListCategories))

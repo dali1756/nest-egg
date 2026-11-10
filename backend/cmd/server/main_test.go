@@ -26,6 +26,7 @@ import (
 	"nest-egg/backend/internal/platform/config"
 	"nest-egg/backend/internal/platform/health"
 	"nest-egg/backend/internal/platform/ratelimit"
+	"nest-egg/backend/internal/platform/requestid"
 	"nest-egg/backend/internal/portfolio"
 	"nest-egg/backend/internal/rate"
 )
@@ -71,7 +72,7 @@ func newTestHandlers(t *testing.T, cfg config.Config, limit func(http.Handler) h
 	currencies := currency.NewService(fakeCurrencyStore{})
 	return handlers{
 		health:    health.NewHandler(okPinger{}),
-		auth:      auth.NewHandler(svc, auth.HandlerConfig{CookieSecure: cfg.CookieSecure}, log),
+		auth:      auth.NewHandler(svc, auth.HandlerConfig{CookieSecure: cfg.CookieSecure}),
 		currency:  currency.NewHandler(currencies),
 		rate:      rate.NewHandler(rate.NewService(fakeRateStore{}, nil, currencies)),
 		ledger:    ledger.NewHandler(ledger.NewService(emptyLedgerStore{}, currencies, fakeRateStore{})),
@@ -269,8 +270,8 @@ func TestProtectedRoutesRequireLogin(t *testing.T) {
 	h := newTestHandler(t)
 
 	anon := serve(h, get("/api/example", nil))
-	if anon.Code != http.StatusUnauthorized || strings.TrimSpace(anon.Body.String()) != `{"error":"unauthorized"}` {
-		t.Errorf("anonymous /api/example = %d %s, want 401 {\"error\":\"unauthorized\"}", anon.Code, anon.Body)
+	if anon.Code != http.StatusUnauthorized || strings.TrimSpace(anon.Body.String()) != `{"error":"unauthorized","request_id":"`+anon.Header().Get(requestid.Header)+`"}` {
+		t.Errorf("anonymous /api/example = %d %s, want 401 {\"error\":\"unauthorized\",\"request_id\":...}", anon.Code, anon.Body)
 	}
 
 	authed := serve(h, get("/api/example", loginCookie(t, h)))

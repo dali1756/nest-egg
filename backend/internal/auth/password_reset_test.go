@@ -71,7 +71,7 @@ func TestForgotPasswordUnavailableWithoutMailer(t *testing.T) {
 
 	r := e.do(t, e.client(t), http.MethodPost, "/api/auth/password/forgot", forgotBody("me@example.com"))
 	expectStatus(t, "forgot", r, http.StatusServiceUnavailable)
-	expectBody(t, "forgot", r, `{"error":"password reset unavailable"}`)
+	expectError(t, "forgot", r, "password reset unavailable")
 }
 
 func TestForgotPasswordLooksTheSameForUnknownEmail(t *testing.T) {
@@ -111,7 +111,7 @@ func TestResetPasswordChangesPasswordAndLogsOutEverywhere(t *testing.T) {
 
 	reuse := e.do(t, e.client(t), http.MethodPost, "/api/auth/password/reset", resetBody(token, "An0ther-password"))
 	expectStatus(t, "reuse token", reuse, http.StatusBadRequest)
-	expectBody(t, "reuse token", reuse, `{"error":"invalid or expired token"}`)
+	expectError(t, "reuse token", reuse, "invalid or expired token")
 }
 
 func TestResetTokenExpiresAfter30Minutes(t *testing.T) {
@@ -168,6 +168,7 @@ func TestMailerErrorReturnsInternalError(t *testing.T) {
 
 	r := e.do(t, e.client(t), http.MethodPost, "/api/auth/password/forgot", forgotBody("me@example.com"))
 	expectStatus(t, "forgot", r, http.StatusInternalServerError)
+	expectError(t, "forgot", r, "internal error")
 	if !strings.Contains(e.logs.String(), "smtp down") {
 		t.Errorf("logs do not contain the mailer error:\n%s", e.logs)
 	}

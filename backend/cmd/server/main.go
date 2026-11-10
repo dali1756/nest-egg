@@ -71,7 +71,7 @@ func run() error {
 
 	h := handlers{
 		health:    health.NewHandler(pool),
-		auth:      auth.NewHandler(authSvc, auth.HandlerConfig{CookieSecure: cfg.CookieSecure}, slog.Default()),
+		auth:      auth.NewHandler(authSvc, auth.HandlerConfig{CookieSecure: cfg.CookieSecure}),
 		currency:  currency.NewHandler(currencies),
 		rate:      rate.NewHandler(rates),
 		ledger:    ledger.NewHandler(ledgerSvc),

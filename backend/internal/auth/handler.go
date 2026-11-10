@@ -2,9 +2,7 @@ package auth
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"log/slog"
 	"net/http"
 	"time"
 
@@ -19,15 +17,13 @@ type Handler struct {
 	svc          *Service
 	cookieSecure bool
 	cookieName   string
-	log          *slog.Logger
 }
 
-func NewHandler(svc *Service, cfg HandlerConfig, log *slog.Logger) *Handler {
+func NewHandler(svc *Service, cfg HandlerConfig) *Handler {
 	return &Handler{
 		svc:          svc,
 		cookieSecure: cfg.CookieSecure,
 		cookieName:   sessionCookieName(cfg.CookieSecure),
-		log:          log,
 	}
 }
 
@@ -38,23 +34,43 @@ func sessionCookieName(secure bool) string {
 	return "nest_egg_session"
 }
 
+var errorStatuses = []struct {
+	err     error
+	status  int
+	message string
+}{
+	{ErrNoSession, http.StatusUnauthorized, "unauthorized"},
+	{ErrInvalidCredentials, http.StatusUnauthorized, "invalid credentials"},
+	{ErrEmailTaken, http.StatusConflict, "email already registered"},
+	{ErrAccountLocked, http.StatusLocked, "account locked"},
+	{ErrWrongPassword, http.StatusForbidden, "current password is incorrect"},
+	{ErrInvalidResetToken, http.StatusBadRequest, "invalid or expired token"},
+	{ErrResetUnavailable, http.StatusServiceUnavailable, "password reset unavailable"},
+}
+
+func toHTTPError(err error) error {
+	for _, s := range errorStatuses {
+		if errors.Is(err, s.err) {
+			return &httpx.StatusError{Status: s.status, Message: s.message}
+		}
+	}
+	return err
+}
+
 type ctxKey struct{}
 
 func (h *Handler) RequireUser(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return httpx.Handler(func(w http.ResponseWriter, r *http.Request) error {
 		token := h.sessionToken(r)
 		user, err := h.svc.Authenticate(r.Context(), token)
-		switch {
-		case errors.Is(err, ErrNoSession):
-			if token != "" {
-				h.clearCookie(w)
-			}
-			writeError(w, http.StatusUnauthorized, "unauthorized")
-		case err != nil:
-			h.internalError(w, r, err)
-		default:
-			next.ServeHTTP(w, r.WithContext(WithUser(r.Context(), user)))
+		if errors.Is(err, ErrNoSession) && token != "" {
+			h.clearCookie(w)
 		}
+		if err != nil {
+			return toHTTPError(err)
+		}
+		next.ServeHTTP(w, r.WithContext(WithUser(r.Context(), user)))
+		return nil
 	})
 }
 
@@ -82,39 +98,27 @@ type userResponse struct {
 	Email string `json:"email"`
 }
 
-type errorResponse struct {
-	Error  string            `json:"error"`
-	Fields map[string]string `json:"fields,omitempty"`
-}
-
 type registerRequest struct {
 	Email           string `json:"email"`
 	Password        string `json:"password"`
 	ConfirmPassword string `json:"confirm_password"`
 }
 
-func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Register(w http.ResponseWriter, r *http.Request) error {
 	var req registerRequest
-	if !decodeJSON(w, r, &req) {
-		return
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		return err
 	}
 	user, token, err := h.svc.Register(r.Context(), RegisterInput{
 		Email:           req.Email,
 		Password:        req.Password,
 		ConfirmPassword: req.ConfirmPassword,
 	})
-	var invalid *ValidationError
-	switch {
-	case errors.As(err, &invalid):
-		writeJSON(w, http.StatusUnprocessableEntity, errorResponse{Error: "invalid input", Fields: invalid.Fields})
-	case errors.Is(err, ErrEmailTaken):
-		writeError(w, http.StatusConflict, "email already registered")
-	case err != nil:
-		h.internalError(w, r, err)
-	default:
-		h.setCookie(w, token)
-		writeJSON(w, http.StatusCreated, userResponse{Email: user.Email})
+	if err != nil {
+		return toHTTPError(err)
 	}
+	h.setCookie(w, token)
+	return httpx.WriteJSON(w, http.StatusCreated, userResponse{Email: user.Email})
 }
 
 type loginRequest struct {
@@ -122,52 +126,42 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
-func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Login(w http.ResponseWriter, r *http.Request) error {
 	var req loginRequest
-	if !decodeJSON(w, r, &req) {
-		return
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		return err
 	}
 	user, token, err := h.svc.Login(r.Context(), req.Email, req.Password)
-	switch {
-	case errors.Is(err, ErrInvalidCredentials):
-		writeError(w, http.StatusUnauthorized, "invalid credentials")
-	case errors.Is(err, ErrAccountLocked):
-		writeError(w, http.StatusLocked, "account locked")
-	case err != nil:
-		h.internalError(w, r, err)
-	default:
-		h.setCookie(w, token)
-		writeJSON(w, http.StatusOK, userResponse{Email: user.Email})
+	if err != nil {
+		return toHTTPError(err)
 	}
+	h.setCookie(w, token)
+	return httpx.WriteJSON(w, http.StatusOK, userResponse{Email: user.Email})
 }
 
-func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) error {
 	h.clearCookie(w)
 	if err := h.svc.Logout(r.Context(), h.sessionToken(r)); err != nil {
-		h.internalError(w, r, err)
-		return
+		return toHTTPError(err)
 	}
 	w.WriteHeader(http.StatusNoContent)
+	return nil
 }
 
 type forgotPasswordRequest struct {
 	Email string `json:"email"`
 }
 
-func (h *Handler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) ForgotPassword(w http.ResponseWriter, r *http.Request) error {
 	var req forgotPasswordRequest
-	if !decodeJSON(w, r, &req) {
-		return
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		return err
 	}
-	err := h.svc.RequestPasswordReset(r.Context(), req.Email)
-	switch {
-	case errors.Is(err, ErrResetUnavailable):
-		writeError(w, http.StatusServiceUnavailable, "password reset unavailable")
-	case err != nil:
-		h.internalError(w, r, err)
-	default:
-		w.WriteHeader(http.StatusAccepted)
+	if err := h.svc.RequestPasswordReset(r.Context(), req.Email); err != nil {
+		return toHTTPError(err)
 	}
+	w.WriteHeader(http.StatusAccepted)
+	return nil
 }
 
 type resetPasswordRequest struct {
@@ -176,27 +170,21 @@ type resetPasswordRequest struct {
 	ConfirmPassword string `json:"confirm_password"`
 }
 
-func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) error {
 	var req resetPasswordRequest
-	if !decodeJSON(w, r, &req) {
-		return
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		return err
 	}
 	err := h.svc.ResetPassword(r.Context(), ResetPasswordInput{
 		Token:           req.Token,
 		Password:        req.Password,
 		ConfirmPassword: req.ConfirmPassword,
 	})
-	var invalid *ValidationError
-	switch {
-	case errors.As(err, &invalid):
-		writeJSON(w, http.StatusUnprocessableEntity, errorResponse{Error: "invalid input", Fields: invalid.Fields})
-	case errors.Is(err, ErrInvalidResetToken):
-		writeError(w, http.StatusBadRequest, "invalid or expired token")
-	case err != nil:
-		h.internalError(w, r, err)
-	default:
-		w.WriteHeader(http.StatusNoContent)
+	if err != nil {
+		return toHTTPError(err)
 	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
 }
 
 type changePasswordRequest struct {
@@ -205,10 +193,10 @@ type changePasswordRequest struct {
 	ConfirmPassword string `json:"confirm_password"`
 }
 
-func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) error {
 	var req changePasswordRequest
-	if !decodeJSON(w, r, &req) {
-		return
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		return err
 	}
 	user, _ := CurrentUser(r.Context())
 	token, err := h.svc.ChangePassword(r.Context(), user, ChangePasswordInput{
@@ -216,25 +204,17 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		Password:        req.Password,
 		ConfirmPassword: req.ConfirmPassword,
 	})
-	var invalid *ValidationError
-	switch {
-	case errors.As(err, &invalid):
-		writeJSON(w, http.StatusUnprocessableEntity, errorResponse{Error: "invalid input", Fields: invalid.Fields})
-	case errors.Is(err, ErrWrongPassword):
-		writeError(w, http.StatusForbidden, "current password is incorrect")
-	case errors.Is(err, ErrAccountLocked):
-		writeError(w, http.StatusLocked, "account locked")
-	case err != nil:
-		h.internalError(w, r, err)
-	default:
-		h.setCookie(w, token)
-		w.WriteHeader(http.StatusNoContent)
+	if err != nil {
+		return toHTTPError(err)
 	}
+	h.setCookie(w, token)
+	w.WriteHeader(http.StatusNoContent)
+	return nil
 }
 
-func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Me(w http.ResponseWriter, r *http.Request) error {
 	user, _ := CurrentUser(r.Context())
-	writeJSON(w, http.StatusOK, userResponse{Email: user.Email})
+	return httpx.WriteJSON(w, http.StatusOK, userResponse{Email: user.Email})
 }
 
 func (h *Handler) sessionToken(r *http.Request) string {
@@ -266,33 +246,4 @@ func (h *Handler) clearCookie(w http.ResponseWriter) {
 		Secure:   h.cookieSecure,
 		SameSite: http.SameSiteLaxMode,
 	})
-}
-
-func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
-	err := json.NewDecoder(r.Body).Decode(v)
-	var tooLarge *http.MaxBytesError
-	switch {
-	case err == nil:
-		return true
-	case errors.As(err, &tooLarge):
-		writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
-	default:
-		writeError(w, http.StatusBadRequest, "invalid json")
-	}
-	return false
-}
-
-func (h *Handler) internalError(w http.ResponseWriter, r *http.Request, err error) {
-	h.log.ErrorContext(r.Context(), "auth request failed", "method", r.Method, "path", r.URL.Path, "err", err)
-	httpx.WriteInternalError(w, r)
-}
-
-func writeError(w http.ResponseWriter, code int, msg string) {
-	writeJSON(w, code, errorResponse{Error: msg})
-}
-
-func writeJSON(w http.ResponseWriter, code int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(v)
 }

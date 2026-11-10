@@ -18,6 +18,7 @@ import (
 
 	"nest-egg/backend/internal/auth"
 	"nest-egg/backend/internal/auth/authtest"
+	"nest-egg/backend/internal/platform/httpx"
 	"nest-egg/backend/internal/platform/requestid"
 )
 
@@ -77,20 +78,24 @@ func newTestEnv(t *testing.T, opts envOptions) *testEnv {
 		logs:  &syncBuffer{},
 	}
 	log := slog.New(requestid.NewLogHandler(slog.NewJSONHandler(e.logs, nil)))
+	// 非預期錯誤由 httpx 用全域 logger 記錄，讓它和 service 的稽核事件寫進同一個 buffer，和正式環境相同
+	old := slog.Default()
+	slog.SetDefault(log)
+	t.Cleanup(func() { slog.SetDefault(old) })
 	svc, err := auth.NewService(e.store, auth.Config{BcryptCost: bcrypt.MinCost, Now: e.clock.Now, Mailer: opts.mailer}, log)
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	h := auth.NewHandler(svc, auth.HandlerConfig{CookieSecure: opts.cookieSecure}, log)
+	h := auth.NewHandler(svc, auth.HandlerConfig{CookieSecure: opts.cookieSecure})
 
 	public, protected := http.NewServeMux(), http.NewServeMux()
-	public.HandleFunc("POST /api/auth/register", h.Register)
-	public.HandleFunc("POST /api/auth/login", h.Login)
-	public.HandleFunc("POST /api/auth/logout", h.Logout)
-	public.HandleFunc("POST /api/auth/password/forgot", h.ForgotPassword)
-	public.HandleFunc("POST /api/auth/password/reset", h.ResetPassword)
-	protected.HandleFunc("GET /api/auth/me", h.Me)
-	protected.HandleFunc("POST /api/auth/password/change", h.ChangePassword)
+	public.Handle("POST /api/auth/register", httpx.Handler(h.Register))
+	public.Handle("POST /api/auth/login", httpx.Handler(h.Login))
+	public.Handle("POST /api/auth/logout", httpx.Handler(h.Logout))
+	public.Handle("POST /api/auth/password/forgot", httpx.Handler(h.ForgotPassword))
+	public.Handle("POST /api/auth/password/reset", httpx.Handler(h.ResetPassword))
+	protected.Handle("GET /api/auth/me", httpx.Handler(h.Me))
+	protected.Handle("POST /api/auth/password/change", httpx.Handler(h.ChangePassword))
 	protected.HandleFunc("GET /api/protected", func(w http.ResponseWriter, r *http.Request) {
 		u, ok := auth.CurrentUser(r.Context())
 		if !ok {
@@ -195,6 +200,11 @@ func expectBody(t *testing.T, what string, r response, want string) {
 	}
 }
 
+func expectError(t *testing.T, what string, r response, message string) {
+	t.Helper()
+	expectBody(t, what, r, `{"error":"`+message+`","request_id":"`+r.header.Get(requestid.Header)+`"}`)
+}
+
 func sessionCookie(t *testing.T, r response) *http.Cookie {
 	t.Helper()
 	for _, c := range r.cookies {
@@ -271,7 +281,7 @@ func TestRegisterDuplicateEmail(t *testing.T) {
 
 	r := e.register(t, e.client(t), "ME@example.com")
 	expectStatus(t, "duplicate register", r, http.StatusConflict)
-	expectBody(t, "duplicate register", r, `{"error":"email already registered"}`)
+	expectError(t, "duplicate register", r, "email already registered")
 	if len(r.cookies) != 0 {
 		t.Errorf("duplicate register set cookies %v, want none", r.cookies)
 	}
@@ -296,8 +306,8 @@ func TestRegisterValidationErrors(t *testing.T) {
 			expectStatus(t, "register", r, http.StatusUnprocessableEntity)
 			m := r.json(t)
 			fields, _ := m["fields"].(map[string]any)
-			if m["error"] != "invalid input" || fields[tt.field] == nil {
-				t.Errorf("body = %v, want error \"invalid input\" with fields.%s", m, tt.field)
+			if m["error"] != "invalid input" || fields[tt.field] == nil || m["request_id"] != r.header.Get(requestid.Header) {
+				t.Errorf("body = %v, want error \"invalid input\" with fields.%s and the request ID", m, tt.field)
 			}
 			if len(r.cookies) != 0 {
 				t.Errorf("cookies %v, want none", r.cookies)
@@ -312,7 +322,45 @@ func TestInvalidJSONIsBadRequest(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodPost, e.srv.URL+"/api/auth/login", strings.NewReader(`{"email":`))
 	r := e.send(t, e.client(t), req)
 	expectStatus(t, "login", r, http.StatusBadRequest)
-	expectBody(t, "login", r, `{"error":"invalid json"}`)
+	expectError(t, "login", r, "invalid json")
+}
+
+func withUnknownField(body map[string]string) map[string]string {
+	body["remember"] = "true"
+	return body
+}
+
+func TestUnknownFieldsAreBadRequest(t *testing.T) {
+	e := newTestEnv(t, envOptions{})
+	c := e.client(t)
+	expectStatus(t, "register", e.register(t, c, "me@example.com"), http.StatusCreated)
+
+	for path, body := range map[string]map[string]string{
+		"/api/auth/register":        registerBody("you@example.com", goodPassword, goodPassword),
+		"/api/auth/login":           loginBody("me@example.com", goodPassword),
+		"/api/auth/password/forgot": {"email": "me@example.com"},
+		"/api/auth/password/reset":  resetBody("token", newPassword),
+		"/api/auth/password/change": changeBody(goodPassword, newPassword),
+	} {
+		r := e.do(t, c, http.MethodPost, path, withUnknownField(body))
+		expectStatus(t, path, r, http.StatusBadRequest)
+		expectError(t, path, r, "invalid json")
+		if len(r.cookies) != 0 {
+			t.Errorf("%s: cookies %v, want none", path, r.cookies)
+		}
+	}
+}
+
+func TestUnknownFieldsDoNotCountTowardLock(t *testing.T) {
+	e := newTestEnv(t, envOptions{})
+	expectStatus(t, "register", e.register(t, e.client(t), "me@example.com"), http.StatusCreated)
+
+	c := e.client(t)
+	for range 3 {
+		r := e.do(t, c, http.MethodPost, "/api/auth/login", withUnknownField(loginBody("me@example.com", "Wr0ngpass!")))
+		expectStatus(t, "wrong password with an unknown field", r, http.StatusBadRequest)
+	}
+	expectStatus(t, "login afterwards", e.login(t, c, "me@example.com", goodPassword), http.StatusOK)
 }
 
 func TestLoginWithCorrectPassword(t *testing.T) {
@@ -336,9 +384,8 @@ func TestLoginFailuresLookTheSame(t *testing.T) {
 	unknown := e.login(t, c, "nobody@example.com", goodPassword)
 	expectStatus(t, "wrong password", wrong, http.StatusUnauthorized)
 	expectStatus(t, "unknown email", unknown, http.StatusUnauthorized)
-	if wrong.body != unknown.body {
-		t.Errorf("bodies differ: wrong password %s, unknown email %s", wrong.body, unknown.body)
-	}
+	expectError(t, "wrong password", wrong, "invalid credentials")
+	expectError(t, "unknown email", unknown, "invalid credentials")
 	expectStatus(t, "me after failed logins", e.do(t, c, http.MethodGet, "/api/auth/me", nil), http.StatusUnauthorized)
 }
 
@@ -380,7 +427,7 @@ func TestLockAfterThreeFailures(t *testing.T) {
 	expectStatus(t, "failure 2", e.login(t, c, "me@example.com", "Wr0ngpass!"), http.StatusUnauthorized)
 	third := e.login(t, c, "me@example.com", "Wr0ngpass!")
 	expectStatus(t, "failure 3", third, http.StatusLocked)
-	expectBody(t, "failure 3", third, `{"error":"account locked"}`)
+	expectError(t, "failure 3", third, "account locked")
 	if !e.store.Locked("me@example.com") {
 		t.Fatal("account not locked after 3 failures")
 	}
@@ -473,7 +520,7 @@ func TestRequireUser(t *testing.T) {
 
 	r := e.do(t, c, http.MethodGet, "/api/protected", nil)
 	expectStatus(t, "without cookie", r, http.StatusUnauthorized)
-	expectBody(t, "without cookie", r, `{"error":"unauthorized"}`)
+	expectError(t, "without cookie", r, "unauthorized")
 	if len(r.cookies) != 0 {
 		t.Errorf("without cookie: set cookies %v, want none", r.cookies)
 	}
@@ -506,13 +553,15 @@ func TestStoreErrorReturnsInternalError(t *testing.T) {
 	} {
 		expectStatus(t, "with store error", r, http.StatusInternalServerError)
 		id := r.header.Get("X-Request-ID")
-		expectBody(t, "with store error", r, `{"error":"internal error","request_id":"`+id+`"}`)
+		expectError(t, "with store error", r, "internal error")
 		if !strings.Contains(e.logs.String(), `"request_id":"`+id+`"`) {
 			t.Errorf("no log line carries request_id %s:\n%s", id, e.logs)
 		}
 	}
-	if !strings.Contains(e.logs.String(), "connection refused") {
-		t.Errorf("logs do not contain the store error:\n%s", e.logs)
+	for _, want := range []string{`"msg":"request failed"`, "connection refused"} {
+		if !strings.Contains(e.logs.String(), want) {
+			t.Errorf("logs do not contain %s:\n%s", want, e.logs)
+		}
 	}
 }
 

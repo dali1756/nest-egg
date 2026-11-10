@@ -11,6 +11,7 @@ import (
 
 	"nest-egg/backend/internal/auth"
 	"nest-egg/backend/internal/auth/authtest"
+	"nest-egg/backend/internal/platform/apperr"
 )
 
 var errorAfterValidation = errors.New("store must not be called")
@@ -59,7 +60,7 @@ func TestChangePasswordWrongCurrentPasswordCountsTowardLock(t *testing.T) {
 
 	r := e.do(t, c, http.MethodPost, "/api/auth/password/change", changeBody("Wr0ngpass!", newPassword))
 	expectStatus(t, "wrong current password", r, http.StatusForbidden)
-	expectBody(t, "wrong current password", r, `{"error":"current password is incorrect"}`)
+	expectError(t, "wrong current password", r, "current password is incorrect")
 	e.do(t, c, http.MethodPost, "/api/auth/password/change", changeBody("Wr0ngpass!", newPassword))
 	r = e.do(t, c, http.MethodPost, "/api/auth/password/change", changeBody("Wr0ngpass!", newPassword))
 	expectStatus(t, "third wrong current password", r, http.StatusLocked)
@@ -122,6 +123,24 @@ func TestLoginUpgradesWeakerHashes(t *testing.T) {
 	}
 	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(goodPassword)) != nil {
 		t.Error("upgraded hash does not match the password")
+	}
+}
+
+func TestFieldErrorsAreSharedValidationErrors(t *testing.T) {
+	svc, err := auth.NewService(authtest.NewMemStore(), auth.Config{BcryptCost: bcrypt.MinCost}, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	weak := "short"
+	_, _, registerErr := svc.Register(t.Context(), auth.RegisterInput{Email: "me@example.com", Password: weak, ConfirmPassword: weak})
+	_, changeErr := svc.ChangePassword(t.Context(), auth.User{ID: 1, Email: "me@example.com"}, auth.ChangePasswordInput{CurrentPassword: goodPassword, Password: weak, ConfirmPassword: weak})
+	resetErr := svc.ResetPassword(t.Context(), auth.ResetPasswordInput{Token: "token", Password: weak, ConfirmPassword: weak})
+
+	for name, err := range map[string]error{"Register": registerErr, "ChangePassword": changeErr, "ResetPassword": resetErr} {
+		var invalid *apperr.ValidationError
+		if !errors.As(err, &invalid) || invalid.Fields["password"] == "" {
+			t.Errorf("%s error = %v, want *apperr.ValidationError with a password field", name, err)
+		}
 	}
 }
 
