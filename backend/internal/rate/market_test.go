@@ -79,6 +79,21 @@ func TestMarketRateColumnsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestMarketRateJSONStringsKeepTheRateAsIsAndTheTaipeiDate(t *testing.T) {
+	stored := &MarketRate{Value: decimal.RequireFromString("32.508"), Date: day(2026, 10, 16)}
+	value, date := stored.JSONStrings()
+	if value == nil || date == nil || *value != "32.508" || *date != "2026-10-16" {
+		t.Errorf("JSONStrings = %v, %v; want 32.508, 2026-10-16", value, date)
+	}
+}
+
+func TestMarketRateJSONStringsOfNoRateAreNull(t *testing.T) {
+	var none *MarketRate
+	if value, date := none.JSONStrings(); value != nil || date != nil {
+		t.Errorf("JSONStrings = %v, %v; want nil, nil", value, date)
+	}
+}
+
 func TestMarketRateFromNullColumnsIsNone(t *testing.T) {
 	if got := MarketRateFromColumns(nil, nil); got != nil {
 		t.Errorf("MarketRateFromColumns(nil, nil) = %+v, want nil", got)

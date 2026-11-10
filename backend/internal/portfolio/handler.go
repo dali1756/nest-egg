@@ -8,7 +8,6 @@ import (
 
 	"nest-egg/backend/internal/auth"
 	"nest-egg/backend/internal/platform/httpx"
-	"nest-egg/backend/internal/rate"
 )
 
 type Handler struct {
@@ -77,7 +76,7 @@ func toOpeningCostResponse(o Opening) openingCostResponse {
 		Cost:        fixedString(o.Cost(), o.TWDMinorUnit),
 		AverageCost: fixedString(o.AverageCost(), averageCostPlaces),
 	}
-	resp.MarketRate, resp.MarketRateDate = marketRateStrings(o.MarketRate)
+	resp.MarketRate, resp.MarketRateDate = o.MarketRate.JSONStrings()
 	return resp
 }
 
@@ -102,7 +101,7 @@ func toCashResponse(c CashBalance) cashResponse {
 		UnrealizedPnL:        fixedString(c.UnrealizedPnL, c.TWDMinorUnit),
 		UnrealizedPnLPercent: fixedString(c.UnrealizedPnLPercent, percentPlaces),
 	}
-	resp.MarketRate, resp.MarketRateDate = marketRateStrings(c.MarketRate)
+	resp.MarketRate, resp.MarketRateDate = c.MarketRate.JSONStrings()
 	if c.UnavailableReason != "" {
 		resp.UnavailableReason = &c.UnavailableReason
 	}
@@ -119,14 +118,6 @@ func fixedString(d *decimal.Decimal, places int) *string {
 	}
 	s := d.StringFixed(int32(places))
 	return &s
-}
-
-func marketRateStrings(m *rate.MarketRate) (value, date *string) {
-	if m == nil {
-		return nil, nil
-	}
-	v, d := m.Value.String(), m.Date.Format(time.DateOnly)
-	return &v, &d
 }
 
 func pathCurrency(r *http.Request) string {

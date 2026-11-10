@@ -82,10 +82,7 @@ func toEntryResponse(e Entry) entryResponse {
 		Amount:     e.Amount.StringFixed(int32(e.MinorUnit)),
 		Note:       e.Note,
 	}
-	if e.MarketRate != nil {
-		rate, date := e.MarketRate.Value.String(), e.MarketRate.Date.Format(time.DateOnly)
-		resp.MarketRate, resp.MarketRateDate = &rate, &date
-	}
+	resp.MarketRate, resp.MarketRateDate = e.MarketRate.JSONStrings()
 	return resp
 }
 

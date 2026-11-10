@@ -54,10 +54,7 @@ type tradeResponse struct {
 
 func toRatesResponse(t Trade) ratesResponse {
 	resp := ratesResponse{TradeRate: t.TradeRate().String()}
-	if t.MarketRate != nil {
-		rate, date := t.MarketRate.Value.String(), t.MarketRate.Date.Format(time.DateOnly)
-		resp.MarketRate, resp.MarketRateDate = &rate, &date
-	}
+	resp.MarketRate, resp.MarketRateDate = t.MarketRate.JSONStrings()
 	if spread := t.Spread(); spread != nil {
 		s := spread.StringFixed(int32(t.TWDMinorUnit))
 		resp.Spread = &s

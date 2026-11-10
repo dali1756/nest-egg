@@ -25,6 +25,14 @@ func (m *MarketRate) Columns() (*decimal.Decimal, *time.Time) {
 	return &m.Value, &m.Date
 }
 
+func (m *MarketRate) JSONStrings() (value, date *string) {
+	if m == nil {
+		return nil, nil
+	}
+	v, d := m.Value.String(), m.Date.Format(time.DateOnly)
+	return &v, &d
+}
+
 func MarketRateFromColumns(value *decimal.Decimal, date *time.Time) *MarketRate {
 	if value == nil || date == nil {
 		return nil
