@@ -1,18 +1,15 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { useState } from 'react'
-import { clearUserIfUnauthorized } from '../hooks/useCurrentUser'
 import Button from './Button'
 import Notice from './Notice'
 
 type ConfirmDeleteButtonProps = { question: string; onDelete: () => Promise<unknown>; onDeleted: () => void }
 
 function ConfirmDeleteButton({ question, onDelete, onDeleted }: ConfirmDeleteButtonProps) {
-  const queryClient = useQueryClient()
   const [confirming, setConfirming] = useState(false)
   const deletion = useMutation({
     mutationFn: onDelete,
     onSuccess: onDeleted,
-    onError: (err) => clearUserIfUnauthorized(queryClient, err),
   })
 
   if (!confirming) {

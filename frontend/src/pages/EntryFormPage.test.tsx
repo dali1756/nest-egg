@@ -285,6 +285,18 @@ test('deletes the entry after confirming', async () => {
   expect(await screen.findByText('這個月還沒有紀錄')).toBeInTheDocument()
 })
 
+test('sends the user to the login page when deleting after the session has expired', async () => {
+  const backend = fakeBackend({ user: 'me@example.com', ledger: { entries: [lunch], deleteStatus: 401 } })
+  const { router } = renderApp('/entries/1')
+  const user = userEvent.setup()
+
+  await user.click(await screen.findByRole('button', { name: '刪除' }))
+  backend.state.user = null
+  await user.click(screen.getByRole('button', { name: '確定刪除' }))
+
+  await waitFor(() => expect(router.state.location.pathname).toBe('/login'))
+})
+
 test('cancelling the delete keeps the entry', async () => {
   const backend = fakeBackend({ user: 'me@example.com', ledger: { entries: [lunch] } })
   renderApp('/entries/1')

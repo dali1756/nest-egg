@@ -1,6 +1,5 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { fieldErrorsFrom, rejectedFields } from '../api/fieldErrors'
-import { clearUserIfUnauthorized } from './useCurrentUser'
 
 type SaveMutationOptions<Input, Saved, Field extends string> = {
   mutationFn: (input: Input) => Promise<Saved>
@@ -16,12 +15,10 @@ export function useSaveMutation<Input, Saved, Field extends string>({
   serverFieldMessages,
   setError,
 }: SaveMutationOptions<Input, Saved, Field>) {
-  const queryClient = useQueryClient()
   const mutation = useMutation({
     mutationFn,
     onSuccess,
     onError: (err) => {
-      clearUserIfUnauthorized(queryClient, err)
       for (const [field, message] of rejectedFields(err, serverFieldMessages)) setError(field, { message })
     },
   })

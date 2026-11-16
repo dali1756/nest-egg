@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { ApiError, changePassword } from '../api/auth'
@@ -7,7 +7,6 @@ import AuthCard from '../components/AuthCard'
 import Field from '../components/Field'
 import Notice from '../components/Notice'
 import SubmitButton from '../components/SubmitButton'
-import { clearUserIfUnauthorized } from '../hooks/useCurrentUser'
 import { passwordHint, passwordSchema } from '../validation/password'
 
 const schema = z
@@ -32,7 +31,6 @@ function errorMessage(err: Error) {
 }
 
 function ChangePasswordPage() {
-  const queryClient = useQueryClient()
   const { register, handleSubmit, formState, reset, setValue } = useForm<ChangeValues>({
     resolver: zodResolver(schema),
     defaultValues: { current_password: '', password: '', confirm_password: '' },
@@ -40,10 +38,7 @@ function ChangePasswordPage() {
   const mutation = useMutation({
     mutationFn: changePassword,
     onSuccess: () => reset(),
-    onError: (err) => {
-      setValue('current_password', '')
-      clearUserIfUnauthorized(queryClient, err)
-    },
+    onError: () => setValue('current_password', ''),
   })
 
   const { errors } = formState

@@ -1,6 +1,7 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
 import { render } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider, type RouteObject } from 'react-router'
+import { createQueryClient } from '../queryClient'
 import { routes } from '../routes'
 
 async function preloadLazyRoutes(routeObjects: RouteObject[]): Promise<void> {
@@ -16,7 +17,7 @@ async function preloadLazyRoutes(routeObjects: RouteObject[]): Promise<void> {
 await preloadLazyRoutes(routes)
 
 export function renderApp(path: string) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const queryClient = createQueryClient()
   const router = createMemoryRouter(routes, { initialEntries: [path] })
   render(
     <QueryClientProvider client={queryClient}>

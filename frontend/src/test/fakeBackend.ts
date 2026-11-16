@@ -34,6 +34,7 @@ export type LedgerOptions = {
   saveStatus?: number
   saveFields?: Record<string, string>
   savePending?: boolean
+  deleteStatus?: number
 }
 
 export type FxOptions = {
@@ -149,6 +150,7 @@ function fakeLedger(opts: LedgerOptions = {}) {
     if (method === 'GET') return json(200, entry)
     if (method === 'PUT') return save(id, body as EntryInput, 200)
     if (method === 'DELETE') {
+      if (opts.deleteStatus) return json(opts.deleteStatus, { error: 'delete failed' })
       entries.delete(id)
       return empty(204)
     }
