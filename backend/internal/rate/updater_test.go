@@ -149,10 +149,11 @@ func TestUpdaterRecoversFromPanics(t *testing.T) {
 
 func TestUpdaterCancelledOnShutdownIsNotAnError(t *testing.T) {
 	lines := runOnce(t, &fakeUpdate{block: true})
-	for _, l := range lines {
-		if l.Level == "ERROR" {
-			t.Errorf("log = %+v, want no ERROR when the update is cancelled by shutdown", l)
-		}
+	if len(lines) != 1 {
+		t.Fatalf("log lines = %+v, want exactly 1", lines)
+	}
+	if l := lines[0]; l.Level != "INFO" || l.Msg != "rates update cancelled" || l.Job != "rates" {
+		t.Errorf("log = %+v, want INFO rates update cancelled with job, not an ERROR", l)
 	}
 }
 

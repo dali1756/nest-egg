@@ -48,7 +48,7 @@ type Updater struct {
 }
 
 func NewUpdater(svc updateRunner, log *slog.Logger) *Updater {
-	return &Updater{svc: svc, log: log, now: time.Now}
+	return &Updater{svc: svc, log: log.With("job", "rates"), now: time.Now}
 }
 
 func (u *Updater) Run(ctx context.Context) {
@@ -68,20 +68,20 @@ func (u *Updater) runOnce(ctx context.Context) (haveToday bool) {
 	start := time.Now()
 	defer func() {
 		if p := recover(); p != nil {
-			u.log.ErrorContext(ctx, "rates update panicked", "job", "rates", "panic", p, "stack", string(debug.Stack()))
+			u.log.ErrorContext(ctx, "rates update panicked", "panic", p, "stack", string(debug.Stack()))
 		}
 	}()
 
 	res, err := u.svc.Update(ctx)
 	if err != nil {
 		if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
-			u.log.InfoContext(ctx, "rates update cancelled", "job", "rates")
+			u.log.InfoContext(ctx, "rates update cancelled")
 			return false
 		}
-		u.log.ErrorContext(ctx, "rates update failed", "job", "rates", "err", err)
+		u.log.ErrorContext(ctx, "rates update failed", "err", err)
 		return false
 	}
-	u.log.InfoContext(ctx, "rates updated", "job", "rates", "source", res.Source,
+	u.log.InfoContext(ctx, "rates updated", "source", res.Source,
 		"fetched", res.Fetched, "inserted", res.Inserted, "updated", res.Updated,
 		"latest_date", res.Latest.Format(time.DateOnly), "duration_ms", time.Since(start).Milliseconds())
 	return res.Latest.Equal(taipei.Today(u.now()))
