@@ -202,6 +202,9 @@ func TestCredentialEndpointsAreRateLimited(t *testing.T) {
 	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") == "" {
 		t.Errorf("11th login = %d, Retry-After %q; want 429 with Retry-After", rec.Code, rec.Header().Get("Retry-After"))
 	}
+	if want := `{"error":"too many requests","request_id":"` + rec.Header().Get("X-Request-ID") + `"}`; strings.TrimSpace(rec.Body.String()) != want {
+		t.Errorf("11th login body = %s, want %s", rec.Body, want)
+	}
 
 	if rec := serve(h, httptest.NewRequest(http.MethodGet, "/api/health", nil)); rec.Code != http.StatusOK {
 		t.Errorf("health while limited = %d, want 200 (not rate limited)", rec.Code)

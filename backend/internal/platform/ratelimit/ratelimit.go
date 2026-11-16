@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"nest-egg/backend/internal/platform/httpx"
 )
 
 type Limiter struct {
@@ -66,16 +68,14 @@ func (l *Limiter) sweep(now time.Time) {
 }
 
 func (l *Limiter) Middleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return httpx.Handler(func(w http.ResponseWriter, r *http.Request) error {
 		ok, wait := l.Allow(ClientIP(r, l.trusted))
 		if !ok {
 			w.Header().Set("Retry-After", strconv.Itoa(int((wait+time.Second-1)/time.Second)))
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusTooManyRequests)
-			_, _ = w.Write([]byte(`{"error":"too many requests"}` + "\n"))
-			return
+			return &httpx.StatusError{Status: http.StatusTooManyRequests, Message: "too many requests"}
 		}
 		next.ServeHTTP(w, r)
+		return nil
 	})
 }
 

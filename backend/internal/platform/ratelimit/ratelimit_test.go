@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"nest-egg/backend/internal/platform/requestid"
 )
 
 type fakeClock struct{ now time.Time }
@@ -139,10 +141,10 @@ func TestParseTrustedProxies(t *testing.T) {
 func TestMiddlewareRejectsWith429(t *testing.T) {
 	l, _ := newTestLimiter(1, 30*time.Second)
 	calls := 0
-	h := l.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := requestid.Middleware(l.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		w.WriteHeader(http.StatusNoContent)
-	}))
+	})))
 	serve := func() *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/auth/login", nil))
@@ -153,10 +155,11 @@ func TestMiddlewareRejectsWith429(t *testing.T) {
 		t.Fatalf("first request = %d, want 204", rec.Code)
 	}
 	rec := serve()
+	want := `{"error":"too many requests","request_id":"` + rec.Header().Get("X-Request-ID") + `"}`
 	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") != "30" ||
-		strings.TrimSpace(rec.Body.String()) != `{"error":"too many requests"}` {
-		t.Errorf("second request = %d, Retry-After %q, body %s; want 429, 30, too many requests",
-			rec.Code, rec.Header().Get("Retry-After"), rec.Body)
+		strings.TrimSpace(rec.Body.String()) != want {
+		t.Errorf("second request = %d, Retry-After %q, body %s; want 429, 30, %s",
+			rec.Code, rec.Header().Get("Retry-After"), rec.Body, want)
 	}
 	if calls != 1 {
 		t.Errorf("next handler called %d times, want 1", calls)
