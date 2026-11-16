@@ -442,7 +442,7 @@ type RateProvider interface {
 - 定期清掉過期的 `sessions` 和 `password_reset_tokens`：目前只在該使用者登入時清掉他自己過期的 session，沒有再登入的使用者會留下資料列（已經無法使用，只是占空間）。可以做成和 `rate.Updater` 一樣的背景工作，交給 `runServer` 啟動與關閉。
 - 正式環境用 embed 提供前端頁面時，HTML 要另外設定 CSP（目前的 CSP 是給 JSON API 用的）。
 - 正式環境的資料庫：後端改用只有必要權限的帳號（不要用 `POSTGRES_USER` 那個超級使用者），連線改成 `sslmode=verify-full`。
-- 依賴弱點掃描：Go 用 `govulncheck ./...`（`brew install govulncheck`），前端用 `pnpm audit`，每次升級套件後跑一次。
+- 依賴弱點掃描：Go 用 `PATH="$(go -C backend env GOROOT)/bin:$PATH" govulncheck -C backend ./...`（`brew install govulncheck`；直接執行 `govulncheck` 會用電腦上安裝的 Go 版本掃描，不是 `go.mod` 指定的版本），前端用 `pnpm audit`，每次升級套件或 Go 版本後跑一次。
 - 接上 SMTP 之後再做：註冊時驗證 email、登入新裝置與變更密碼時寄通知信。
 - 「目前登入的裝置」列表，讓使用者看到並個別登出（需要在 `sessions` 多存裝置資訊）。
 - 分類管理：新增、改名、刪除、排序分類。允許刪除之後，「全部刪光又冒出預設分類」的情況要改用 `users` 上的旗標記錄已建立過預設分類。
