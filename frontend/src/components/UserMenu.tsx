@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useId, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { logout } from '../api/auth'
-import { currentUserKey } from '../hooks/useCurrentUser'
+import { signOutLocally } from '../hooks/useCurrentUser'
 
 const itemClass =
   'block w-full cursor-pointer rounded-control px-3 py-2 text-left text-sm font-semibold text-heading transition-colors hover:bg-brand-soft focus-visible:outline-3 focus-visible:outline-offset-1 focus-visible:outline-ring disabled:cursor-default disabled:opacity-60'
@@ -35,7 +35,7 @@ function UserMenu({ email }: { email: string }) {
   const mutation = useMutation({
     mutationFn: logout,
     onSuccess: () => {
-      queryClient.setQueryData(currentUserKey, null)
+      signOutLocally(queryClient)
       navigate('/login', { replace: true })
     },
   })

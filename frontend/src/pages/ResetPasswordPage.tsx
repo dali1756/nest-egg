@@ -10,7 +10,7 @@ import Field from '../components/Field'
 import Notice from '../components/Notice'
 import SubmitButton from '../components/SubmitButton'
 import TextLink from '../components/TextLink'
-import { currentUserKey } from '../hooks/useCurrentUser'
+import { signOutLocally } from '../hooks/useCurrentUser'
 import { passwordHint, passwordSchema } from '../validation/password'
 
 const schema = z
@@ -52,7 +52,7 @@ function ResetPasswordPage() {
   })
   const mutation = useMutation({
     mutationFn: (values: ResetValues) => resetPassword({ token, ...values }),
-    onSuccess: () => queryClient.setQueryData(currentUserKey, null),
+    onSuccess: () => signOutLocally(queryClient),
   })
 
   if (!token) {

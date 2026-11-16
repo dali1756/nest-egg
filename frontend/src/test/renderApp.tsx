@@ -23,5 +23,12 @@ export function renderApp(path: string) {
       <RouterProvider router={router} />
     </QueryClientProvider>,
   )
-  return { router }
+  return { router, queryClient }
+}
+
+export function cachedQueryKeys(queryClient: QueryClient) {
+  return queryClient
+    .getQueryCache()
+    .getAll()
+    .map((query) => query.queryKey)
 }

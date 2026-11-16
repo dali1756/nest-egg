@@ -11,7 +11,7 @@ import Notice from '../components/Notice'
 import PageMessage from '../components/PageMessage'
 import SubmitButton from '../components/SubmitButton'
 import TextLink from '../components/TextLink'
-import { currentUserKey, useCurrentUser } from '../hooks/useCurrentUser'
+import { signInLocally, useCurrentUser } from '../hooks/useCurrentUser'
 
 const schema = z.object({
   email: z.email('請輸入有效的 email'),
@@ -36,7 +36,7 @@ function LoginPage() {
   })
   const mutation = useMutation({
     mutationFn: login,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: currentUserKey }),
+    onSuccess: () => signInLocally(queryClient),
     onError: () => setValue('password', ''),
   })
 

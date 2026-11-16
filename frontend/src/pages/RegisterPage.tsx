@@ -11,7 +11,7 @@ import Notice from '../components/Notice'
 import PageMessage from '../components/PageMessage'
 import SubmitButton from '../components/SubmitButton'
 import TextLink from '../components/TextLink'
-import { currentUserKey, useCurrentUser } from '../hooks/useCurrentUser'
+import { signInLocally, useCurrentUser } from '../hooks/useCurrentUser'
 import { passwordHint, passwordSchema } from '../validation/password'
 
 const schema = z
@@ -43,7 +43,7 @@ function RegisterPage() {
   })
   const mutation = useMutation({
     mutationFn: registerUser,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: currentUserKey }),
+    onSuccess: () => signInLocally(queryClient),
   })
 
   if (me.isPending) return <PageMessage>{loadingText}</PageMessage>
