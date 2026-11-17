@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { ApiError, changePassword } from '../api/auth'
 import AuthCard from '../components/AuthCard'
+import { accountLockedMessage } from '../components/authMessages'
 import Field from '../components/Field'
 import Notice from '../components/Notice'
 import SubmitButton from '../components/SubmitButton'
@@ -24,7 +25,7 @@ type ChangeValues = z.infer<typeof schema>
 
 function errorMessage(err: Error) {
   if (err instanceof ApiError && err.status === 403) return '目前的密碼不正確'
-  if (err instanceof ApiError && err.status === 423) return '帳號已鎖定，請聯絡管理員'
+  if (err instanceof ApiError && err.status === 423) return accountLockedMessage
   if (err instanceof ApiError && err.status === 422) return '資料格式不正確'
   if (err instanceof ApiError && err.status === 429) return '嘗試次數過多，請稍後再試'
   return '變更失敗，請稍後再試'

@@ -86,7 +86,8 @@ test('tells the user when the account is locked', async () => {
 
   await fillLogin('me@example.com', 'Passw0rd!')
 
-  expect(await screen.findByRole('alert')).toHaveTextContent('帳號已鎖定，請聯絡管理員')
+  expect(await screen.findByRole('alert')).toHaveTextContent('密碼錯誤次數過多，請稍後再嘗試')
+  expect(screen.getByLabelText('密碼')).toHaveValue('')
 })
 
 test('links to the forgot password page', async () => {
