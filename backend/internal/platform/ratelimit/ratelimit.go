@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/netip"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -71,7 +70,7 @@ func (l *Limiter) Middleware(next http.Handler) http.Handler {
 	return httpx.Handler(func(w http.ResponseWriter, r *http.Request) error {
 		ok, wait := l.Allow(ClientIP(r, l.trusted))
 		if !ok {
-			w.Header().Set("Retry-After", strconv.Itoa(int((wait+time.Second-1)/time.Second)))
+			httpx.SetRetryAfter(w, wait)
 			return &httpx.StatusError{Status: http.StatusTooManyRequests, Message: "too many requests"}
 		}
 		next.ServeHTTP(w, r)
