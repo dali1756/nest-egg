@@ -20,6 +20,12 @@ const (
 	passwordResetTTL     = 30 * time.Minute
 )
 
+// 連續錯 n 次就暫時鎖定：登入成功後第一次鎖 10 分鐘，之後每次 30 分鐘。
+const (
+	firstLockDuration  = 10 * time.Minute
+	repeatLockDuration = 30 * time.Minute
+)
+
 var (
 	ErrInvalidCredentials = errors.New("invalid credentials")
 	ErrWrongPassword      = errors.New("current password is incorrect")
@@ -30,6 +36,15 @@ var (
 	ErrInvalidResetToken  = errors.New("invalid or expired reset token")
 	ErrNotFound           = errors.New("not found")
 )
+
+// 表示帳號鎖定中，RetryAfter 是離解鎖還有多久
+type LockedError struct {
+	RetryAfter time.Duration
+}
+
+func (e *LockedError) Error() string { return ErrAccountLocked.Error() }
+
+func (e *LockedError) Is(target error) bool { return target == ErrAccountLocked }
 
 type User struct {
 	ID    int64
@@ -57,11 +72,26 @@ type Session struct {
 	ExpiresAt  time.Time
 }
 
+// 預留一次密碼嘗試的規則：失敗次數上限，以及這次用完次數時要鎖到什麼時候。
+// 之前沒鎖過（登入成功之後）用 FirstLockUntil，鎖過就用 RepeatLockUntil
+type AttemptLimit struct {
+	MaxFailures     int
+	Now             time.Time
+	FirstLockUntil  time.Time
+	RepeatLockUntil time.Time
+}
+
+// 預留的結果。Reserved 為 false 時帳號鎖定中，LockedUntil 是解鎖時間
+// Reserved 為 true 且 LockedUntil 有值時，這次用完了次數、鎖已經寫入，比對正確才會解除
+type LoginAttempt struct {
+	Reserved    bool
+	LockedUntil time.Time
+}
+
 type Store interface {
 	CreateUser(ctx context.Context, email, passwordHash string) (int64, error)
 	UserByEmail(ctx context.Context, email string) (UserRecord, error)
-	ReserveLoginAttempt(ctx context.Context, userID int64, maxFailures int) (bool, error)
-	LockIfFailuresExhausted(ctx context.Context, userID int64, maxFailures int) (bool, error)
+	ReserveLoginAttempt(ctx context.Context, userID int64, limit AttemptLimit) (LoginAttempt, error)
 	ClearLoginFailures(ctx context.Context, userID int64) error
 	UpdatePasswordHash(ctx context.Context, userID int64, passwordHash string) error
 	ChangePassword(ctx context.Context, userID int64, passwordHash string) error
@@ -183,30 +213,36 @@ func (s *Service) Login(ctx context.Context, email, password string) (User, stri
 }
 
 // checkPassword 比對密碼並記錄失敗次數，登入和變更密碼共用同一個鎖定機制。
+// 比對前先預留這次嘗試，同時送出的請求加起來也不會超過上限；用完次數的那一次在預留時就上鎖，比對中斷也只鎖到該次的時間
 func (s *Service) checkPassword(ctx context.Context, action string, u UserRecord, password string) error {
 	if password == "" || len(password) > maxBcryptBytes {
 		return ErrInvalidCredentials
 	}
-	reserved, err := s.store.ReserveLoginAttempt(ctx, u.ID, maxFailedLogins)
+	now := s.now()
+	attempt, err := s.store.ReserveLoginAttempt(ctx, u.ID, AttemptLimit{
+		MaxFailures:     maxFailedLogins,
+		Now:             now,
+		FirstLockUntil:  now.Add(firstLockDuration),
+		RepeatLockUntil: now.Add(repeatLockDuration),
+	})
 	if err != nil {
 		return fmt.Errorf("reserve attempt: %w", err)
 	}
-	if !reserved {
+	if !attempt.Reserved {
 		s.log.InfoContext(ctx, "password check rejected", "action", action, "reason", "locked", "user_id", u.ID)
-		return ErrAccountLocked
+		return &LockedError{RetryAfter: attempt.LockedUntil.Sub(now)}
 	}
 
 	if !s.hasher.matches(u.PasswordHash, password) {
-		locked, err := s.store.LockIfFailuresExhausted(ctx, u.ID, maxFailedLogins)
-		if err != nil {
-			return fmt.Errorf("lock account: %w", err)
+		if attempt.LockedUntil.IsZero() {
+			s.log.InfoContext(ctx, "password check failed", "action", action, "reason", "wrong_password", "user_id", u.ID)
+			return ErrInvalidCredentials
 		}
-		if locked {
-			s.log.WarnContext(ctx, "account locked", "action", action, "user_id", u.ID, "failed_attempts", maxFailedLogins)
-			return ErrAccountLocked
-		}
-		s.log.InfoContext(ctx, "password check failed", "action", action, "reason", "wrong_password", "user_id", u.ID)
-		return ErrInvalidCredentials
+		lockFor := attempt.LockedUntil.Sub(now)
+		// 資料庫只存到微秒，存回來的時間會比 now 加上的時間略短
+		s.log.WarnContext(ctx, "account locked", "action", action, "user_id", u.ID,
+			"failed_attempts", maxFailedLogins, "lock_minutes", int(lockFor.Round(time.Minute)/time.Minute))
+		return &LockedError{RetryAfter: lockFor}
 	}
 
 	if err := s.store.ClearLoginFailures(ctx, u.ID); err != nil {

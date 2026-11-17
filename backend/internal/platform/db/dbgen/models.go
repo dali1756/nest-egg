@@ -7,6 +7,7 @@ package dbgen
 import (
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
 )
 
@@ -97,6 +98,8 @@ type User struct {
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	FailedLoginCount int16
-	// 0 未封鎖、1 封鎖。連續登入失敗 3 次會設成 1，只能手動改回 0 解鎖
-	Locked int16
+	// 鎖到什麼時候，NULL 或已過去表示沒有鎖定。連續 3 次密碼錯誤時寫入：登入成功後第一次鎖 10 分鐘，之後每次 30 分鐘。緊急時手動解鎖：UPDATE users SET locked_until = NULL, failed_login_count = 0, lock_count = 0 WHERE email = '...'
+	LockedUntil pgtype.Timestamptz
+	// 上次登入成功（或重設密碼）之後鎖過幾次，0 表示下一次鎖 10 分鐘，其他鎖 30 分鐘
+	LockCount int32
 }

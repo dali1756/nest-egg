@@ -418,10 +418,10 @@ type RateProvider interface {
   - **次數限制：** 註冊、登入、忘記密碼、重設密碼、變更密碼這些要輸入 email 或密碼的端點，每個 IP 連續 10 次，之後每 6 秒補 1 次，超過回 429 和 `Retry-After`（`platform/ratelimit`；在 `cmd/server/routes.go` 用 `h.limit(...)` 套用）。IPv6 以 /64 為單位。預設只看連線本身的位址，不採用 `X-Forwarded-For`（使用者可以自己加這個 header）；放在反向代理後面時，把代理的 IP 或 CIDR 設進 `TRUSTED_PROXIES`，才會從 header 由右往左跳過代理取出使用者 IP。開發環境經過 Vite proxy，所有請求共用同一個額度。計數存在記憶體，重啟後歸零；之後如果跑多台後端，要改用共用的儲存或在反向代理做限制。
   - **密碼：** 只存 bcrypt 雜湊（cost 12）；舊的雜湊 cost 比較低時，使用者下次登入成功會自動換成 cost 12。規則：8～64 個字元，只能用英文字母、數字、符號（可列印 ASCII，不含空白），大寫、小寫、數字、符號各至少一個。前後端規則一致：`internal/auth/password.go`、`frontend/src/validation/password.ts`，兩邊的測試案例也一致。
   - **Session：** 存在 `sessions` 表，cookie 只放 128 bits 的隨機 token（`crypto/rand.Text()`），資料庫只存 token 的 SHA-256。cookie 是 HttpOnly、`SameSite=Lax`；`COOKIE_SECURE=true` 時加 Secure，名稱改成 `__Host-nest_egg_session`，子網域無法塞同名 cookie 進來。24 小時沒有需要登入的請求就失效；不論有沒有在用，登入滿 7 天一定失效。`last_seen_at` 最多每分鐘更新一次。登出會刪掉資料庫裡的 session，複製出去的 cookie 也跟著失效。
-  - **鎖定：** 同一帳號連續 3 次密碼錯誤，`users.locked` 設成 1，之後登入一律回 423。只能手動解鎖：`UPDATE users SET locked = 0 WHERE email = '...';`。登入成功會把失敗次數歸零。鎖定只擋登入，不會讓已經登入的 session 失效。
+  - **鎖定：** 同一帳號連續 3 次密碼錯誤就暫時鎖定（`users.locked_until`），之後登入一律回 423 與 `Retry-After`（還要等幾秒），鎖定期間不比對密碼、不計次、不延長。登入成功後第一次鎖 10 分鐘，時間到自動解鎖並重新計次，之後再連錯 3 次都鎖 30 分鐘（上限）；登入成功或重設密碼後回到 10 分鐘那一級（`users.lock_count` 記錄鎖過幾次）。不做永久鎖定：知道別人 email 的人故意輸錯，最多只能讓對方等 30 分鐘。預留嘗試與上鎖在同一個 SQL 陳述式完成，第 3 次在比對密碼前就上鎖、比對正確才解除，所以第 3 次還在比對時同時送來的其他嘗試也回 423。緊急時手動解鎖：`UPDATE users SET locked_until = NULL, failed_login_count = 0, lock_count = 0 WHERE email = '...';`。鎖定只擋登入，不會讓已經登入的 session 失效。
   - **變更密碼：** 要輸入目前的密碼，錯誤次數和登入共用同一個鎖定計數。成功後其他裝置全部登出、未使用的重設 token 作廢，目前這台裝置換一個新的 session token。
   - **防探測：** 帳號不存在時也跑一次 bcrypt，回應時間和密碼錯誤一樣。email 只接受 ASCII，避免用全形等長得很像的字元註冊成另一個帳號。刻意接受的取捨：註冊時 email 已存在回 409、帳號鎖定回 423，這兩種情況仍然看得出 email 有註冊。
-  - **忘記密碼：** token 存在 `password_reset_tokens`（只存雜湊），30 分鐘內有效、只能用一次，同一個使用者只保留最新的一個。前端讀到 token 後會把它從網址列拿掉。重設成功後所有裝置登出、失敗次數歸零，但不會解鎖。還沒接 SMTP，見第 10 節待辦。
+  - **忘記密碼：** token 存在 `password_reset_tokens`（只存雜湊），30 分鐘內有效、只能用一次，同一個使用者只保留最新的一個。前端讀到 token 後會把它從網址列拿掉。重設成功後所有裝置登出、失敗次數歸零並解除鎖定。還沒接 SMTP，見第 10 節待辦。
   - **輸入上限：** email 254 字元、密碼 72 bytes、token 64 字元，超過的在查資料庫前就擋掉。
   - **log：** 只記 `user_id`，不記 email、密碼、token。
   - 放上網路前還要：HTTPS（`COOKIE_SECURE` 維持預設 true）；有反向代理就設定 `TRUSTED_PROXIES`，並確認代理會在 `X-Forwarded-For` 最後面加上使用者 IP。

@@ -64,20 +64,25 @@ func (r *Repository) UserByEmail(ctx context.Context, email string) (UserRecord,
 	return UserRecord{ID: row.ID, Email: row.Email, PasswordHash: row.PasswordHash}, nil
 }
 
-func (r *Repository) ReserveLoginAttempt(ctx context.Context, userID int64, maxFailures int) (bool, error) {
-	n, err := r.q.ReserveLoginAttempt(ctx, dbgen.ReserveLoginAttemptParams{ID: userID, MaxFailures: int16(maxFailures)})
-	if err != nil {
-		return false, fmt.Errorf("update failed_login_count: %w", err)
+func (r *Repository) ReserveLoginAttempt(ctx context.Context, userID int64, limit AttemptLimit) (LoginAttempt, error) {
+	row, err := r.q.ReserveLoginAttempt(ctx, dbgen.ReserveLoginAttemptParams{
+		UserID:          userID,
+		MaxFailures:     int16(limit.MaxFailures),
+		Now:             limit.Now,
+		FirstLockUntil:  limit.FirstLockUntil,
+		RepeatLockUntil: limit.RepeatLockUntil,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return LoginAttempt{}, ErrNotFound
 	}
-	return n == 1, nil
-}
-
-func (r *Repository) LockIfFailuresExhausted(ctx context.Context, userID int64, maxFailures int) (bool, error) {
-	n, err := r.q.LockIfFailuresExhausted(ctx, dbgen.LockIfFailuresExhaustedParams{ID: userID, MaxFailures: int16(maxFailures)})
 	if err != nil {
-		return false, fmt.Errorf("update locked: %w", err)
+		return LoginAttempt{}, fmt.Errorf("reserve login attempt: %w", err)
 	}
-	return n == 1, nil
+	attempt := LoginAttempt{Reserved: !row.WasLocked}
+	if row.LockedUntil.Valid {
+		attempt.LockedUntil = row.LockedUntil.Time
+	}
+	return attempt, nil
 }
 
 func (r *Repository) ClearLoginFailures(ctx context.Context, userID int64) error {

@@ -420,6 +420,24 @@ func TestUnknownEmailTakesAsLongAsWrongPassword(t *testing.T) {
 	}
 }
 
+func (e *testEnv) failLogins(t *testing.T, n int) response {
+	t.Helper()
+	var r response
+	for range n {
+		r = e.login(t, e.client(t), "me@example.com", "Wr0ngpass!")
+	}
+	return r
+}
+
+func expectLocked(t *testing.T, what string, r response, retryAfter string) {
+	t.Helper()
+	expectStatus(t, what, r, http.StatusLocked)
+	expectError(t, what, r, "account locked")
+	if got := r.header.Get("Retry-After"); got != retryAfter {
+		t.Errorf("%s: Retry-After = %q, want %q", what, got, retryAfter)
+	}
+}
+
 func TestLockAfterThreeFailures(t *testing.T) {
 	e := newTestEnv(t, envOptions{})
 	expectStatus(t, "register", e.register(t, e.client(t), "me@example.com"), http.StatusCreated)
@@ -427,18 +445,91 @@ func TestLockAfterThreeFailures(t *testing.T) {
 
 	expectStatus(t, "failure 1", e.login(t, c, "me@example.com", "Wr0ngpass!"), http.StatusUnauthorized)
 	expectStatus(t, "failure 2", e.login(t, c, "me@example.com", "Wr0ngpass!"), http.StatusUnauthorized)
-	third := e.login(t, c, "me@example.com", "Wr0ngpass!")
-	expectStatus(t, "failure 3", third, http.StatusLocked)
-	expectError(t, "failure 3", third, "account locked")
-	if !e.store.Locked("me@example.com") {
-		t.Fatal("account not locked after 3 failures")
+	expectLocked(t, "failure 3", e.login(t, c, "me@example.com", "Wr0ngpass!"), "600")
+
+	expectLocked(t, "correct password while locked", e.login(t, c, "me@example.com", goodPassword), "600")
+	expectStatus(t, "failed logins create no session", e.do(t, c, http.MethodGet, "/api/auth/me", nil), http.StatusUnauthorized)
+}
+
+func TestLockDoesNotGrowWhileLocked(t *testing.T) {
+	e := newTestEnv(t, envOptions{})
+	expectStatus(t, "register", e.register(t, e.client(t), "me@example.com"), http.StatusCreated)
+	e.failLogins(t, 3)
+
+	e.clock.Advance(4 * time.Minute)
+	expectLocked(t, "wrong password 4 minutes into the lock", e.failLogins(t, 1), "360")
+	expectLocked(t, "and again", e.failLogins(t, 1), "360")
+}
+
+func TestLockEndsAfterTenMinutes(t *testing.T) {
+	e := newTestEnv(t, envOptions{})
+	expectStatus(t, "register", e.register(t, e.client(t), "me@example.com"), http.StatusCreated)
+	e.failLogins(t, 3)
+
+	e.clock.Advance(10*time.Minute - time.Second)
+	expectLocked(t, "one second before the lock ends", e.login(t, e.client(t), "me@example.com", goodPassword), "1")
+	e.clock.Advance(time.Second)
+	expectStatus(t, "when the lock ends", e.login(t, e.client(t), "me@example.com", goodPassword), http.StatusOK)
+}
+
+func TestLaterLocksLastThirtyMinutes(t *testing.T) {
+	e := newTestEnv(t, envOptions{})
+	expectStatus(t, "register", e.register(t, e.client(t), "me@example.com"), http.StatusCreated)
+	expectLocked(t, "first lock", e.failLogins(t, 3), "600")
+
+	e.clock.Advance(10 * time.Minute)
+	expectStatus(t, "failures count again after the lock", e.failLogins(t, 2), http.StatusUnauthorized)
+	expectLocked(t, "second lock", e.failLogins(t, 1), "1800")
+
+	e.clock.Advance(30 * time.Minute)
+	expectLocked(t, "third lock", e.failLogins(t, 3), "1800")
+
+	logs := e.logs.String()
+	for _, want := range []string{`"lock_minutes":10`, `"lock_minutes":30`} {
+		if !strings.Contains(logs, want) {
+			t.Errorf("logs do not contain %s:\n%s", want, logs)
+		}
+	}
+}
+
+func TestSuccessfulLoginGoesBackToTenMinutes(t *testing.T) {
+	e := newTestEnv(t, envOptions{})
+	expectStatus(t, "register", e.register(t, e.client(t), "me@example.com"), http.StatusCreated)
+	e.failLogins(t, 3)
+
+	e.clock.Advance(10 * time.Minute)
+	expectStatus(t, "login after the lock", e.login(t, e.client(t), "me@example.com", goodPassword), http.StatusOK)
+	expectLocked(t, "next lock", e.failLogins(t, 3), "600")
+}
+
+func TestInterruptedThirdAttemptLocksOnlyUntilTheLockEnds(t *testing.T) {
+	e := newTestEnv(t, envOptions{})
+	expectStatus(t, "register", e.register(t, e.client(t), "me@example.com"), http.StatusCreated)
+	e.failLogins(t, 2)
+
+	// 第 3 次預留之後伺服器就中斷了：沒有比對密碼，也沒有後續的寫入
+	u, err := e.store.UserByEmail(t.Context(), "me@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := e.clock.Now()
+	limit := auth.AttemptLimit{MaxFailures: 3, Now: now, FirstLockUntil: now.Add(10 * time.Minute), RepeatLockUntil: now.Add(30 * time.Minute)}
+	if _, err := e.store.ReserveLoginAttempt(t.Context(), u.ID, limit); err != nil {
+		t.Fatal(err)
 	}
 
-	expectStatus(t, "correct password while locked", e.login(t, c, "me@example.com", goodPassword), http.StatusLocked)
-	expectStatus(t, "failed logins create no session", e.do(t, c, http.MethodGet, "/api/auth/me", nil), http.StatusUnauthorized)
+	expectLocked(t, "right after the interruption", e.login(t, e.client(t), "me@example.com", goodPassword), "600")
+	e.clock.Advance(10 * time.Minute)
+	expectStatus(t, "after the lock ends", e.login(t, e.client(t), "me@example.com", goodPassword), http.StatusOK)
+}
+
+func TestManualUnlock(t *testing.T) {
+	e := newTestEnv(t, envOptions{})
+	expectStatus(t, "register", e.register(t, e.client(t), "me@example.com"), http.StatusCreated)
+	e.failLogins(t, 3)
 
 	e.store.Unlock("me@example.com")
-	expectStatus(t, "login after unlock", e.login(t, c, "me@example.com", goodPassword), http.StatusOK)
+	expectStatus(t, "login after a manual unlock", e.login(t, e.client(t), "me@example.com", goodPassword), http.StatusOK)
 }
 
 func TestSuccessfulLoginResetsFailures(t *testing.T) {
@@ -451,9 +542,7 @@ func TestSuccessfulLoginResetsFailures(t *testing.T) {
 	expectStatus(t, "correct password", e.login(t, c, "me@example.com", goodPassword), http.StatusOK)
 	e.login(t, c, "me@example.com", "Wr0ngpass!")
 	expectStatus(t, "2nd failure after success", e.login(t, c, "me@example.com", "Wr0ngpass!"), http.StatusUnauthorized)
-	if e.store.Locked("me@example.com") {
-		t.Error("locked after 2+2 failures separated by a success, want unlocked")
-	}
+	expectStatus(t, "correct password after 2+2 failures", e.login(t, c, "me@example.com", goodPassword), http.StatusOK)
 }
 
 func TestLockDoesNotEndExistingSessions(t *testing.T) {
@@ -461,13 +550,7 @@ func TestLockDoesNotEndExistingSessions(t *testing.T) {
 	owner := e.client(t)
 	expectStatus(t, "register", e.register(t, owner, "me@example.com"), http.StatusCreated)
 
-	attacker := e.client(t)
-	for range 3 {
-		e.login(t, attacker, "me@example.com", "Wr0ngpass!")
-	}
-	if !e.store.Locked("me@example.com") {
-		t.Fatal("account not locked")
-	}
+	expectLocked(t, "attacker's 3rd attempt", e.failLogins(t, 3), "600")
 	expectStatus(t, "owner's session", e.do(t, owner, http.MethodGet, "/api/auth/me", nil), http.StatusOK)
 }
 

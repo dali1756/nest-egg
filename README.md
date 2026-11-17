@@ -52,9 +52,9 @@ bash .claude/skills/nest-egg-verify/scripts/verify-stack.sh
 - 密碼 8～64 個字元，只能用英文字母、數字與符號（不可有空白），大寫、小寫、數字、符號各至少一個；資料庫只存 bcrypt 雜湊。
 - 登入後的首頁暫時是「系統狀態」頁，之後會換成正式首頁。
 - 24 小時沒有操作會自動登出；不論有沒有在用，登入滿 7 天要重新登入。
-- 同一帳號連續輸錯 3 次密碼會被封鎖，只能到資料庫解鎖：
+- 同一帳號連續輸錯 3 次密碼會暫時鎖定 10 分鐘，時間到自動解鎖；解鎖後又連錯 3 次就鎖 30 分鐘，登入成功後回到 10 分鐘。開發時想馬上解鎖可以到資料庫執行：
   ```bash
-  docker-compose exec db psql -U admin -d nest_egg -c "UPDATE users SET locked = 0 WHERE email = 'me@example.com';"
+  docker-compose exec db psql -U admin -d nest_egg -c "UPDATE users SET locked_until = NULL, failed_login_count = 0, lock_count = 0 WHERE email = 'me@example.com';"
   ```
 - 註冊、登入、忘記密碼、重設密碼、變更密碼同一個 IP 每分鐘最多約 10 次，超過會顯示「嘗試次數過多，請稍後再試」。
 - 「忘記密碼」要等接上 SMTP 才開放，目前畫面會顯示尚未開放（見 [docs/architecture.md](docs/architecture.md) 第 10 節）。

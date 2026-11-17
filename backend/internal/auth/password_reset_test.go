@@ -152,13 +152,21 @@ func TestResetPasswordWithUnknownToken(t *testing.T) {
 	}
 }
 
-func TestResetPasswordDoesNotUnlock(t *testing.T) {
+func TestResetPasswordUnlocks(t *testing.T) {
 	e, _, token := newResetEnv(t)
-	for range 3 {
-		e.login(t, e.client(t), "me@example.com", "Wr0ngpass!")
-	}
+	e.failLogins(t, 3)
 	expectStatus(t, "reset", e.do(t, e.client(t), http.MethodPost, "/api/auth/password/reset", resetBody(token, newPassword)), http.StatusNoContent)
-	expectStatus(t, "new password on locked account", e.login(t, e.client(t), "me@example.com", newPassword), http.StatusLocked)
+	expectStatus(t, "new password right after the reset", e.login(t, e.client(t), "me@example.com", newPassword), http.StatusOK)
+}
+
+func TestResetPasswordGoesBackToTenMinutes(t *testing.T) {
+	e, _, token := newResetEnv(t)
+	e.failLogins(t, 3)
+	e.clock.Advance(time.Minute)
+	expectStatus(t, "reset", e.do(t, e.client(t), http.MethodPost, "/api/auth/password/reset", resetBody(token, newPassword)), http.StatusNoContent)
+
+	expectStatus(t, "failures after the reset", e.failLogins(t, 2), http.StatusUnauthorized)
+	expectLocked(t, "next lock", e.failLogins(t, 1), "600")
 }
 
 func TestMailerErrorReturnsInternalError(t *testing.T) {

@@ -9,9 +9,17 @@ import (
 )
 
 type memUser struct {
-	rec    auth.UserRecord
-	failed int
-	locked bool
+	rec         auth.UserRecord
+	failed      int
+	lockCount   int
+	lockedUntil time.Time
+}
+
+// unlock 和手動解鎖的 SQL 相同：解除鎖定，失敗次數與鎖過幾次都歸零
+func (u *memUser) unlock() {
+	u.failed = 0
+	u.lockCount = 0
+	u.lockedUntil = time.Time{}
 }
 
 type memReset struct {
@@ -40,18 +48,11 @@ func (m *MemStore) SetError(err error) {
 	m.err = err
 }
 
-func (m *MemStore) Locked(email string) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	u := m.byEmail(email)
-	return u != nil && u.locked
-}
-
 func (m *MemStore) Unlock(email string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if u := m.byEmail(email); u != nil {
-		u.locked = false
+		u.unlock()
 	}
 }
 
@@ -106,33 +107,31 @@ func (m *MemStore) UserByEmail(_ context.Context, email string) (auth.UserRecord
 	return u.rec, nil
 }
 
-func (m *MemStore) ReserveLoginAttempt(_ context.Context, userID int64, maxFailures int) (bool, error) {
+func (m *MemStore) ReserveLoginAttempt(_ context.Context, userID int64, limit auth.AttemptLimit) (auth.LoginAttempt, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.err != nil {
-		return false, m.err
+		return auth.LoginAttempt{}, m.err
 	}
 	u := m.users[userID]
-	if u == nil || u.locked || u.failed >= maxFailures {
-		return false, nil
+	if u == nil {
+		return auth.LoginAttempt{}, auth.ErrNotFound
+	}
+	if u.lockedUntil.After(limit.Now) {
+		return auth.LoginAttempt{LockedUntil: u.lockedUntil}, nil
 	}
 	u.failed++
-	return true, nil
-}
-
-func (m *MemStore) LockIfFailuresExhausted(_ context.Context, userID int64, maxFailures int) (bool, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.err != nil {
-		return false, m.err
+	if u.failed < limit.MaxFailures {
+		u.lockedUntil = time.Time{}
+		return auth.LoginAttempt{Reserved: true}, nil
 	}
-	u := m.users[userID]
-	if u == nil || u.failed < maxFailures {
-		return false, nil
-	}
-	u.locked = true
 	u.failed = 0
-	return true, nil
+	u.lockedUntil = limit.FirstLockUntil
+	if u.lockCount > 0 {
+		u.lockedUntil = limit.RepeatLockUntil
+	}
+	u.lockCount++
+	return auth.LoginAttempt{Reserved: true, LockedUntil: u.lockedUntil}, nil
 }
 
 func (m *MemStore) ClearLoginFailures(_ context.Context, userID int64) error {
@@ -142,7 +141,7 @@ func (m *MemStore) ClearLoginFailures(_ context.Context, userID int64) error {
 		return m.err
 	}
 	if u := m.users[userID]; u != nil {
-		u.failed = 0
+		u.unlock()
 	}
 	return nil
 }
@@ -258,7 +257,7 @@ func (m *MemStore) ChangePassword(_ context.Context, userID int64, passwordHash 
 func (m *MemStore) replacePassword(userID int64, passwordHash string) {
 	u := m.users[userID]
 	u.rec.PasswordHash = passwordHash
-	u.failed = 0
+	u.unlock()
 	for k, s := range m.sessions {
 		if s.UserID == userID {
 			delete(m.sessions, k)
@@ -275,7 +274,7 @@ func (m *MemStore) UpdatePasswordHash(_ context.Context, userID int64, passwordH
 	}
 	u := m.users[userID]
 	u.rec.PasswordHash = passwordHash
-	u.failed = 0
+	u.unlock()
 	return nil
 }
 

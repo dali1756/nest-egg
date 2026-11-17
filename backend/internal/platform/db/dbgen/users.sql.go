@@ -7,14 +7,20 @@ package dbgen
 
 import (
 	"context"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const clearLoginFailures = `-- name: ClearLoginFailures :exec
 UPDATE users
-SET failed_login_count = 0
+SET failed_login_count = 0,
+    lock_count         = 0,
+    locked_until       = NULL
 WHERE id = $1
 `
 
+// 密碼比對正確：失敗次數歸零、解除鎖定，下一次鎖定回到 first_lock_until
 func (q *Queries) ClearLoginFailures(ctx context.Context, id int64) error {
 	_, err := q.db.Exec(ctx, clearLoginFailures, id)
 	return err
@@ -57,53 +63,76 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEm
 	return i, err
 }
 
-const lockIfFailuresExhausted = `-- name: LockIfFailuresExhausted :execrows
-UPDATE users
-SET locked             = 1,
-    failed_login_count = 0,
-    updated_at         = now()
-WHERE id = $1
-  AND failed_login_count >= $2
-`
-
-type LockIfFailuresExhaustedParams struct {
-	ID          int64
-	MaxFailures int16
-}
-
-func (q *Queries) LockIfFailuresExhausted(ctx context.Context, arg LockIfFailuresExhaustedParams) (int64, error) {
-	result, err := q.db.Exec(ctx, lockIfFailuresExhausted, arg.ID, arg.MaxFailures)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
-const reserveLoginAttempt = `-- name: ReserveLoginAttempt :execrows
-UPDATE users
-SET failed_login_count = failed_login_count + 1
-WHERE id = $1
-  AND locked = 0
-  AND failed_login_count < $2
+const reserveLoginAttempt = `-- name: ReserveLoginAttempt :one
+WITH current_user_lock AS (
+    SELECT users.id,
+           users.failed_login_count,
+           users.lock_count,
+           users.locked_until,
+           COALESCE(users.locked_until > $3::timestamptz, false)    AS was_locked,
+           users.failed_login_count + 1 >= $4::smallint AS uses_last_attempt
+    FROM users
+    WHERE users.id = $5
+    FOR UPDATE
+)
+UPDATE users u
+SET failed_login_count = CASE
+                             WHEN c.was_locked THEN c.failed_login_count
+                             WHEN c.uses_last_attempt THEN 0
+                             ELSE c.failed_login_count + 1
+                         END,
+    lock_count         = CASE
+                             WHEN NOT c.was_locked AND c.uses_last_attempt THEN c.lock_count + 1
+                             ELSE c.lock_count
+                         END,
+    locked_until       = CASE
+                             WHEN c.was_locked THEN c.locked_until
+                             WHEN c.uses_last_attempt AND c.lock_count = 0 THEN $1::timestamptz
+                             WHEN c.uses_last_attempt THEN $2::timestamptz
+                         END
+FROM current_user_lock c
+WHERE u.id = c.id
+RETURNING c.was_locked::boolean AS was_locked, u.locked_until
 `
 
 type ReserveLoginAttemptParams struct {
-	ID          int64
-	MaxFailures int16
+	FirstLockUntil  time.Time
+	RepeatLockUntil time.Time
+	Now             time.Time
+	MaxFailures     int16
+	UserID          int64
 }
 
-func (q *Queries) ReserveLoginAttempt(ctx context.Context, arg ReserveLoginAttemptParams) (int64, error) {
-	result, err := q.db.Exec(ctx, reserveLoginAttempt, arg.ID, arg.MaxFailures)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+type ReserveLoginAttemptRow struct {
+	WasLocked   bool
+	LockedUntil pgtype.Timestamptz
+}
+
+// 比對密碼前先預留一次嘗試，同時送出的請求也只能用完 max_failures 次。一個陳述式完成，FOR UPDATE 讓同時的預留排隊：
+//
+//	鎖定中：什麼都不改，回報被拒絕與解鎖時間。
+//	這次用完次數：在比對密碼前就上鎖（比對正確才由 ClearLoginFailures 解除），比對中斷也只鎖到這個時間。
+//	  登入成功後第一次鎖到 first_lock_until，之後鎖到 repeat_lock_until。
+//	其他：失敗次數 +1，過期的鎖定時間清掉。
+func (q *Queries) ReserveLoginAttempt(ctx context.Context, arg ReserveLoginAttemptParams) (ReserveLoginAttemptRow, error) {
+	row := q.db.QueryRow(ctx, reserveLoginAttempt,
+		arg.FirstLockUntil,
+		arg.RepeatLockUntil,
+		arg.Now,
+		arg.MaxFailures,
+		arg.UserID,
+	)
+	var i ReserveLoginAttemptRow
+	err := row.Scan(&i.WasLocked, &i.LockedUntil)
+	return i, err
 }
 
 const updatePasswordHash = `-- name: UpdatePasswordHash :exec
 UPDATE users
 SET password_hash      = $2,
     failed_login_count = 0,
+    lock_count         = 0,
+    locked_until       = NULL,
     updated_at         = now()
 WHERE id = $1
 `
@@ -113,6 +142,7 @@ type UpdatePasswordHashParams struct {
 	PasswordHash string
 }
 
+// 換密碼一併解除鎖定：重設密碼要解鎖；變更密碼與重算雜湊都已經比對成功，本來就不會在鎖定中
 func (q *Queries) UpdatePasswordHash(ctx context.Context, arg UpdatePasswordHashParams) error {
 	_, err := q.db.Exec(ctx, updatePasswordHash, arg.ID, arg.PasswordHash)
 	return err

@@ -14,10 +14,11 @@ var base = time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
 func RunStoreContract(t *testing.T, newStore func(t *testing.T) auth.Store) {
 	t.Run("users", func(t *testing.T) { testUsers(t, newStore(t)) })
 	t.Run("login attempts", func(t *testing.T) { testLoginAttempts(t, newStore(t)) })
+	t.Run("third attempt in flight", func(t *testing.T) { testThirdAttemptInFlight(t, newStore(t)) })
 	t.Run("sessions", func(t *testing.T) { testSessions(t, newStore(t)) })
 	t.Run("stale sessions", func(t *testing.T) { testStaleSessions(t, newStore(t)) })
 	t.Run("password reset", func(t *testing.T) { testPasswordReset(t, newStore(t)) })
-	t.Run("password reset keeps lock", func(t *testing.T) { testPasswordResetKeepsLock(t, newStore(t)) })
+	t.Run("password reset unlocks", func(t *testing.T) { testPasswordResetUnlocks(t, newStore(t)) })
 	t.Run("change password", func(t *testing.T) { testChangePassword(t, newStore(t)) })
 	t.Run("update password hash", func(t *testing.T) { testUpdatePasswordHash(t, newStore(t)) })
 }
@@ -52,61 +53,86 @@ func testUsers(t *testing.T, s auth.Store) {
 	}
 }
 
-func reserve(t *testing.T, s auth.Store, id int64) bool {
+const (
+	maxFailures = 3
+	firstLock   = 10 * time.Minute
+	repeatLock  = 30 * time.Minute
+)
+
+func reserveAt(t *testing.T, s auth.Store, id int64, now time.Time) auth.LoginAttempt {
 	t.Helper()
-	ok, err := s.ReserveLoginAttempt(t.Context(), id, 3)
+	got, err := s.ReserveLoginAttempt(t.Context(), id, auth.AttemptLimit{
+		MaxFailures:     maxFailures,
+		Now:             now,
+		FirstLockUntil:  now.Add(firstLock),
+		RepeatLockUntil: now.Add(repeatLock),
+	})
 	if err != nil {
 		t.Fatalf("ReserveLoginAttempt: %v", err)
 	}
-	return ok
+	return got
 }
 
-func lockIfExhausted(t *testing.T, s auth.Store, id int64) bool {
+// 在 now 連續預留到上鎖為止，回傳鎖到什麼時候，前幾次不能上鎖，代表一開始的失敗次數是 0
+func lockOut(t *testing.T, s auth.Store, id int64, now time.Time) time.Time {
 	t.Helper()
-	locked, err := s.LockIfFailuresExhausted(t.Context(), id, 3)
-	if err != nil {
-		t.Fatalf("LockIfFailuresExhausted: %v", err)
+	for i := 1; i < maxFailures; i++ {
+		if got := reserveAt(t, s, id, now); !got.Reserved || !got.LockedUntil.IsZero() {
+			t.Fatalf("attempt %d at %v = %+v, want reserved without a lock", i, now, got)
+		}
 	}
-	return locked
+	got := reserveAt(t, s, id, now)
+	if !got.Reserved || got.LockedUntil.IsZero() {
+		t.Fatalf("attempt %d at %v = %+v, want reserved and locked", maxFailures, now, got)
+	}
+	return got.LockedUntil
+}
+
+func expectLockedUntil(t *testing.T, what string, got, want time.Time) {
+	t.Helper()
+	if !got.Equal(want) {
+		t.Errorf("%s: locked until %v, want %v", what, got, want)
+	}
 }
 
 func testLoginAttempts(t *testing.T, s auth.Store) {
 	a := mustCreateUser(t, s, "a@example.com")
-	for i := 1; i <= 3; i++ {
-		if !reserve(t, s, a) {
-			t.Fatalf("attempt %d: reserve = false, want true", i)
-		}
+	b := mustCreateUser(t, s, "b@example.com")
+	firstUntil := lockOut(t, s, a, base)
+	expectLockedUntil(t, "first lock", firstUntil, base.Add(firstLock))
+
+	during := base.Add(4 * time.Minute)
+	if got := reserveAt(t, s, a, during); got.Reserved || !got.LockedUntil.Equal(firstUntil) {
+		t.Errorf("reserve while locked = %+v, want rejected until %v", got, firstUntil)
 	}
-	if reserve(t, s, a) {
-		t.Error("4th attempt: reserve = true, want false once 3 attempts are used")
+	if got := reserveAt(t, s, b, during); !got.Reserved || !got.LockedUntil.IsZero() {
+		t.Errorf("another user while a is locked = %+v, want reserved without a lock", got)
 	}
-	if !lockIfExhausted(t, s, a) {
-		t.Error("lock after 3 failures = false, want true")
+
+	// 第 3 次之後沒有呼叫 ClearLoginFailures（比對中斷）也一樣：時間到就重新計算，被拒絕的預留不算次數
+	second := firstUntil
+	secondUntil := lockOut(t, s, a, second)
+	expectLockedUntil(t, "lock after the first one expired", secondUntil, second.Add(repeatLock))
+	third := secondUntil
+	expectLockedUntil(t, "every later lock", lockOut(t, s, a, third), third.Add(repeatLock))
+
+	if err := s.ClearLoginFailures(t.Context(), a); err != nil {
+		t.Fatalf("ClearLoginFailures: %v", err)
 	}
-	if lockIfExhausted(t, s, a) {
-		t.Error("second lock = true, want false (count was reset when locking)")
+	afterSuccess := third.Add(repeatLock)
+	expectLockedUntil(t, "lock after a successful login", lockOut(t, s, a, afterSuccess), afterSuccess.Add(firstLock))
+}
+
+func testThirdAttemptInFlight(t *testing.T, s auth.Store) {
+	a := mustCreateUser(t, s, "a@example.com")
+	until := lockOut(t, s, a, base)
+	if got := reserveAt(t, s, a, base); got.Reserved || !got.LockedUntil.Equal(until) {
+		t.Errorf("reserve while the 3rd attempt is being checked = %+v, want rejected until %v", got, until)
 	}
 	if err := s.ClearLoginFailures(t.Context(), a); err != nil {
 		t.Fatalf("ClearLoginFailures: %v", err)
 	}
-	if reserve(t, s, a) {
-		t.Error("reserve on locked account after ClearLoginFailures = true, want false")
-	}
-
-	b := mustCreateUser(t, s, "b@example.com")
-	reserve(t, s, b)
-	reserve(t, s, b)
-	if lockIfExhausted(t, s, b) {
-		t.Error("lock after 2 failures = true, want false")
-	}
-	if err := s.ClearLoginFailures(t.Context(), b); err != nil {
-		t.Fatalf("ClearLoginFailures: %v", err)
-	}
-	for i := 1; i <= 3; i++ {
-		if !reserve(t, s, b) {
-			t.Fatalf("attempt %d after clear: reserve = false, want true", i)
-		}
-	}
+	expectLockedUntil(t, "lock after the 3rd attempt turned out right", lockOut(t, s, a, base), base.Add(firstLock))
 }
 
 func testSessions(t *testing.T, s auth.Store) {
@@ -203,8 +229,8 @@ func testPasswordReset(t *testing.T, s auth.Store) {
 			t.Fatalf("CreateSession: %v", err)
 		}
 	}
-	reserve(t, s, a)
-	reserve(t, s, a)
+	reserveAt(t, s, a, base)
+	reserveAt(t, s, a, base)
 
 	older, newer := []byte("older"), []byte("newer")
 	createReset(t, s, a, older, base.Add(30*time.Minute))
@@ -225,11 +251,7 @@ func testPasswordReset(t *testing.T, s auth.Store) {
 			t.Errorf("session %d: alive = %v, want %v", i, err == nil, wantAlive)
 		}
 	}
-	for i := 1; i <= 3; i++ {
-		if !reserve(t, s, a) {
-			t.Fatalf("attempt %d after reset: reserve = false, want true (failures cleared)", i)
-		}
-	}
+	lockOut(t, s, a, base)
 	if _, err := s.ResetPassword(ctx, newer, "again", base); !errors.Is(err, auth.ErrNotFound) {
 		t.Errorf("reusing a token: err = %v, want ErrNotFound", err)
 	}
@@ -244,19 +266,14 @@ func testPasswordReset(t *testing.T, s auth.Store) {
 	}
 }
 
-func testPasswordResetKeepsLock(t *testing.T, s auth.Store) {
+func testPasswordResetUnlocks(t *testing.T, s auth.Store) {
 	a := mustCreateUser(t, s, "a@example.com")
-	for range 3 {
-		reserve(t, s, a)
-	}
-	lockIfExhausted(t, s, a)
+	lockOut(t, s, a, base)
 	createReset(t, s, a, []byte("token"), base.Add(time.Hour))
 	if _, err := s.ResetPassword(t.Context(), []byte("token"), "new-hash", base); err != nil {
 		t.Fatalf("ResetPassword: %v", err)
 	}
-	if reserve(t, s, a) {
-		t.Error("reserve after reset on a locked account = true, want false (only a manual unlock clears locked)")
-	}
+	expectLockedUntil(t, "lock after a reset", lockOut(t, s, a, base), base.Add(firstLock))
 }
 
 func testChangePassword(t *testing.T, s auth.Store) {
@@ -270,8 +287,8 @@ func testChangePassword(t *testing.T, s auth.Store) {
 		}
 	}
 	createReset(t, s, a, []byte("token"), base.Add(time.Hour))
-	reserve(t, s, a)
-	reserve(t, s, a)
+	reserveAt(t, s, a, base)
+	reserveAt(t, s, a, base)
 
 	if err := s.ChangePassword(ctx, a, "new-hash"); err != nil {
 		t.Fatalf("ChangePassword: %v", err)
@@ -287,11 +304,7 @@ func testChangePassword(t *testing.T, s auth.Store) {
 	if _, err := s.ResetPassword(ctx, []byte("token"), "other", base); !errors.Is(err, auth.ErrNotFound) {
 		t.Errorf("reset token after change: err = %v, want ErrNotFound", err)
 	}
-	for i := 1; i <= 3; i++ {
-		if !reserve(t, s, a) {
-			t.Fatalf("attempt %d after change: reserve = false, want true (failures cleared)", i)
-		}
-	}
+	lockOut(t, s, a, base)
 }
 
 func testUpdatePasswordHash(t *testing.T, s auth.Store) {
@@ -301,6 +314,7 @@ func testUpdatePasswordHash(t *testing.T, s auth.Store) {
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
+	lockOut(t, s, a, base)
 	if err := s.UpdatePasswordHash(ctx, a, "stronger-hash"); err != nil {
 		t.Fatalf("UpdatePasswordHash: %v", err)
 	}
@@ -310,4 +324,5 @@ func testUpdatePasswordHash(t *testing.T, s auth.Store) {
 	if _, err := s.SessionByTokenHash(ctx, []byte("s")); err != nil {
 		t.Errorf("session after UpdatePasswordHash: %v, want kept", err)
 	}
+	expectLockedUntil(t, "lock after UpdatePasswordHash", lockOut(t, s, a, base), base.Add(firstLock))
 }

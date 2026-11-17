@@ -48,7 +48,12 @@ var errorStatuses = []struct {
 	{ErrResetUnavailable, http.StatusServiceUnavailable, "password reset unavailable"},
 }
 
-func toHTTPError(err error) error {
+// 把 service 的錯誤轉成狀態碼；帳號鎖定時告訴使用者還要等多久
+func toHTTPError(w http.ResponseWriter, err error) error {
+	var locked *LockedError
+	if errors.As(err, &locked) {
+		httpx.SetRetryAfter(w, locked.RetryAfter)
+	}
 	for _, s := range errorStatuses {
 		if errors.Is(err, s.err) {
 			return &httpx.StatusError{Status: s.status, Message: s.message}
@@ -67,14 +72,14 @@ func (h *Handler) RequireUser(next http.Handler) http.Handler {
 			h.clearCookie(w)
 		}
 		if err != nil {
-			return toHTTPError(err)
+			return toHTTPError(w, err)
 		}
 		next.ServeHTTP(w, r.WithContext(WithUser(r.Context(), user)))
 		return nil
 	})
 }
 
-// WithUser 回傳帶有登入使用者的 context，CurrentUser 從這裡讀
+// 回傳帶有登入使用者的 context，CurrentUser 從這裡讀
 func WithUser(ctx context.Context, u User) context.Context {
 	return context.WithValue(ctx, ctxKey{}, u)
 }
@@ -115,7 +120,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) error {
 		ConfirmPassword: req.ConfirmPassword,
 	})
 	if err != nil {
-		return toHTTPError(err)
+		return toHTTPError(w, err)
 	}
 	h.setCookie(w, token)
 	return httpx.WriteJSON(w, http.StatusCreated, userResponse{Email: user.Email})
@@ -133,7 +138,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) error {
 	}
 	user, token, err := h.svc.Login(r.Context(), req.Email, req.Password)
 	if err != nil {
-		return toHTTPError(err)
+		return toHTTPError(w, err)
 	}
 	h.setCookie(w, token)
 	return httpx.WriteJSON(w, http.StatusOK, userResponse{Email: user.Email})
@@ -142,7 +147,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) error {
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) error {
 	h.clearCookie(w)
 	if err := h.svc.Logout(r.Context(), h.sessionToken(r)); err != nil {
-		return toHTTPError(err)
+		return toHTTPError(w, err)
 	}
 	w.WriteHeader(http.StatusNoContent)
 	return nil
@@ -158,7 +163,7 @@ func (h *Handler) ForgotPassword(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if err := h.svc.RequestPasswordReset(r.Context(), req.Email); err != nil {
-		return toHTTPError(err)
+		return toHTTPError(w, err)
 	}
 	w.WriteHeader(http.StatusAccepted)
 	return nil
@@ -181,7 +186,7 @@ func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) error {
 		ConfirmPassword: req.ConfirmPassword,
 	})
 	if err != nil {
-		return toHTTPError(err)
+		return toHTTPError(w, err)
 	}
 	w.WriteHeader(http.StatusNoContent)
 	return nil
@@ -205,7 +210,7 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) error {
 		ConfirmPassword: req.ConfirmPassword,
 	})
 	if err != nil {
-		return toHTTPError(err)
+		return toHTTPError(w, err)
 	}
 	h.setCookie(w, token)
 	w.WriteHeader(http.StatusNoContent)

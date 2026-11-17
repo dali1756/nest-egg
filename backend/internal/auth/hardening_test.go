@@ -63,11 +63,8 @@ func TestChangePasswordWrongCurrentPasswordCountsTowardLock(t *testing.T) {
 	expectError(t, "wrong current password", r, "current password is incorrect")
 	e.do(t, c, http.MethodPost, "/api/auth/password/change", changeBody("Wr0ngpass!", newPassword))
 	r = e.do(t, c, http.MethodPost, "/api/auth/password/change", changeBody("Wr0ngpass!", newPassword))
-	expectStatus(t, "third wrong current password", r, http.StatusLocked)
-	if !e.store.Locked("me@example.com") {
-		t.Error("account not locked after 3 wrong current passwords")
-	}
-	expectStatus(t, "login while locked", e.login(t, e.client(t), "me@example.com", goodPassword), http.StatusLocked)
+	expectLocked(t, "third wrong current password", r, "600")
+	expectLocked(t, "login while locked", e.login(t, e.client(t), "me@example.com", goodPassword), "600")
 }
 
 func TestChangePasswordValidationDoesNotCountAsFailure(t *testing.T) {
@@ -79,9 +76,7 @@ func TestChangePasswordValidationDoesNotCountAsFailure(t *testing.T) {
 		r := e.do(t, c, http.MethodPost, "/api/auth/password/change", changeBody("Wr0ngpass!", "weak"))
 		expectStatus(t, "weak new password", r, http.StatusUnprocessableEntity)
 	}
-	if e.store.Locked("me@example.com") {
-		t.Error("locked by requests that never checked the current password")
-	}
+	expectStatus(t, "login after 3 weak new passwords", e.login(t, e.client(t), "me@example.com", goodPassword), http.StatusOK)
 }
 
 func TestChangePasswordRequiresLogin(t *testing.T) {
